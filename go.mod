@@ -1,4 +1,4 @@
-module github.com/ca11back/cpa-codex-reorder
+module github.com/Ca11back/cpa-codex-reorder
 
 go 1.26.10
 

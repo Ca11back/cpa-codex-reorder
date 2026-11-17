@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ca11back/cpa-codex-reorder/internal/reorder"
+	"github.com/Ca11back/cpa-codex-reorder/internal/reorder"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )

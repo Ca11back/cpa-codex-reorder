@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ca11back/cpa-codex-reorder/internal/reorder"
+	"github.com/Ca11back/cpa-codex-reorder/internal/reorder"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
 )
@@ -22,7 +22,7 @@ const (
 	pluginVersion = "0.6.5"
 	pluginAuthor  = "cpa-codex-reorder"
 	// pluginRepository must be non-empty: CPA rejects plugins without a repository URL.
-	pluginRepository = "https://github.com/ca11back/cpa-codex-reorder"
+	pluginRepository = "https://github.com/Ca11back/cpa-codex-reorder"
 
 	// statePath is the authenticated Management API route serving dashboard data.
 	statePath   = "/codex-reorder/state"

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ca11back/cpa-codex-reorder/internal/reorder"
+	"github.com/Ca11back/cpa-codex-reorder/internal/reorder"
 )
 
 const (
