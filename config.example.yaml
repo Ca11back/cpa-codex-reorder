@@ -1,0 +1,74 @@
+# Merge into CPA's config.yaml. Only the plugin-related parts are shown.
+
+plugins:
+  enabled: true
+  dir: "plugins"            # codex-reorder.so goes here (or plugins/linux/amd64/)
+  configs:
+    # Only one scheduler plugin can be active in CPA. If you run another Codex
+    # scheduler plugin (for example codex-quota-scheduler), disable it completely:
+    # such plugins may keep observing usage and intercepting requests even when
+    # they no longer own scheduling.
+    codex-quota-scheduler:
+      enabled: false
+
+    codex-reorder:
+      enabled: true
+      priority: 10
+      # Ranking for NEW sessions, most important first; the next field is only
+      # compared when the previous ones tie. Existing sessions never move because
+      # of this ranking. Fields:
+      #   sessions        fewer active sessions first (spreads load; risk control)
+      #   priority        higher CPA credential priority first
+      #   unopened_first  accounts without a running weekly window first
+      #   unopened_last   accounts without a running weekly window last
+      #   urgency         earliest "urgency time" first (see below)
+      #   reset           earliest weekly reset first
+      #   remaining       most remaining weekly quota (x plan multiplier) first
+      # Any order is allowed. urgency, reset and remaining rarely tie, so rules
+      # placed after them seldom get compared. priority has no effect when all
+      # accounts share one priority.
+      # Accounts whose quota is known to be used up always rank last.
+      order: [priority, sessions, unopened_first, urgency]
+      # urgency time = weekly reset - remaining% x plan multiplier x this many minutes.
+      # The more quota is left, the earlier it has to be used. 0 makes urgency = reset.
+      urgency_minutes_per_percent: 1
+      # Plan size per CPA auth ID (as shown on the dashboard). Unlisted accounts
+      # count as 1 (Plus / Team standard seat). Team Pro seat and Pro $100 = 10,
+      # Pro $200 = 20. Only affects urgency and remaining.
+      plan_multipliers: {}
+      #   <auth ID copied from the dashboard>: 20
+      # Sliding stickiness window. A session stays on its account, and counts as
+      # that account's load, until it has been idle this long. When the account
+      # cannot serve a request (error, cooldown, disabled, quota used up), the
+      # session moves to a new account for good, like CPA's default
+      # session-affinity-rebind-on: any.
+      session_ttl: "30m"
+      # Bindings, quota snapshots and the decision log survive CPA restarts here
+      # (relative to CPA's working directory). Empty disables persistence.
+      state_path: "codex-reorder-state.json"
+      # By default only account credentials (OAuth / PAT auth files) are
+      # scheduled. Codex API keys from this config file have no Codex quota
+      # windows and stay with CPA's own selection. true schedules them too.
+      manage_api_keys: false
+      # How often a "codex-reorder stats" line (counters plus account state) is
+      # written to CPA's log, e.g. 15m. off (the default) writes none; pick,
+      # window_end, image_usage and the other event lines are written anyway.
+      stats_interval: "off"
+      # Automatic weekly window opening: an account whose weekly window is not
+      # running gets one minimal request at a random time inside warmup_hours.
+      # true sends real requests. All settings can also be changed on the
+      # dashboard ("开窗设置").
+      warmup_enabled: false
+      warmup_model: "gpt-6-luna"
+      warmup_reasoning_effort: "low"    # Codex models: low (cheapest) .. max
+      # The prompt is generated each time: "Reply with <random number>."
+      warmup_hours: "09:00-22:00"       # "00:00-24:00" = any time
+      warmup_timezone: "Asia/Shanghai"
+      warmup_delay: "20m-90m"           # random wait after the window stops running; "0s" = none
+      warmup_spacing: "0s"              # random gap between two openings, e.g. "5m-20m"
+      warmup_max_per_account_per_day: 2 # automatic attempts per account and day
+
+routing:
+  # Keep CPA's own stickiness for the other providers. Codex selection is taken
+  # over by the plugin; its bindings live in the plugin, not in this cache.
+  session-affinity: true

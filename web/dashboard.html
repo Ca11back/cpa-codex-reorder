@@ -1,0 +1,1151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Codex Reorder</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f6fde; --ok: #1f9d55; --warn: #c27c0e; --bad: #d64545; --chip: #eef1f6;
+    --bar: #dfe4ec; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1a1e26; --text: #e4e7ee; --muted: #8d95a7; --line: #2a303b;
+      --accent: #6a9cff; --ok: #3ccf7e; --warn: #e3a33a; --bad: #ff6b6b; --chip: #242a35; --bar: #2c3340;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 17px; margin: 0; }
+  h1 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  main { padding: 16px 20px 40px; display: grid; gap: 16px; max-width: 1500px; margin: 0 auto; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=password] { width: 260px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  button { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--chip); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .err { color: var(--bad); }
+  .ok { color: var(--ok); }
+  table { border-collapse: collapse; width: 100%; min-width: 900px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: var(--chip); }
+  tr.sub td { background: var(--bg); padding: 4px 8px 10px 40px; }
+  .order { display: inline-block; min-width: 26px; text-align: center; border-radius: 6px; padding: 1px 6px; background: var(--chip); font-weight: 600; }
+  .order.next { background: var(--accent); color: #fff; }
+  .badge { display: inline-block; border-radius: 5px; padding: 0 7px; font-size: 12px; line-height: 20px; white-space: nowrap; }
+  .b-ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .b-warn { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .b-bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+  .b-info { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .b-muted { background: var(--chip); color: var(--muted); }
+  .bar { position: relative; height: 6px; border-radius: 3px; background: var(--bar); width: 120px; margin: 4px 0 2px; overflow: hidden; }
+  .bar > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+  .bar.hot > span { background: var(--warn); }
+  .bar.full > span { background: var(--bad); }
+  .load { font-weight: 600; }
+  .load.over { color: var(--warn); }
+  .name { font-weight: 600; }
+  .hint { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+  .empty { color: var(--muted); padding: 10px 0; }
+  .warn-line { font-size: 12.5px; color: var(--warn); margin: 6px 0 0; }
+  th .rank { color: var(--accent); font-weight: 700; margin-right: 2px; }
+  .editor { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr); gap: 18px; margin-top: 10px; }
+  @media (max-width: 900px) { .editor { grid-template-columns: 1fr; } }
+  .rules { list-style: none; margin: 0; padding: 0; }
+  .rules li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; margin-bottom: 6px; background: var(--bg); }
+  .rules li.off { opacity: 0.55; }
+  .rules li .grow { flex: 1; }
+  .rules li .num { font-weight: 700; color: var(--accent); min-width: 18px; }
+  .rules li button { padding: 1px 7px; }
+  .rules li[draggable=true] { cursor: grab; }
+  .rules li.dragover { border-color: var(--accent); }
+  .field-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+  select, input[type=number] { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  input[type=number] { width: 84px; }
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cmp ol { margin: 4px 0; padding-left: 20px; font-size: 12.5px; }
+  .cmp li { margin: 3px 0; }
+  .moved-up { color: var(--ok); font-weight: 600; }
+  .moved-down { color: var(--warn); font-weight: 600; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+  .sec-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .sec-head h2 { margin: 0; }
+  button.sm { padding: 2px 8px; font-size: 12px; }
+  button:disabled { opacity: .55; cursor: default; }
+  #probeLog { margin: 0 0 10px; padding-left: 18px; font-size: 12.5px; }
+  h3 { font-size: 13px; margin: 0 0 6px; }
+  input[type=text] { padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  input.hm { width: 64px; }
+  input.w-model { width: 170px; }
+  input.w-tz { width: 150px; }
+  input.w-effort { width: 100px; }
+  .wform { display: grid; grid-template-columns: max-content 1fr; gap: 9px 14px; align-items: center; margin-top: 10px; max-width: 980px; }
+  .wform > .lbl { font-weight: 600; }
+  .wform .muted { font-size: 12.5px; }
+  .modes { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .modes label { display: flex; gap: 5px; align-items: center; cursor: pointer; }
+  .nolimit { display: inline-flex; gap: 4px; align-items: center; margin-right: 6px; cursor: pointer; }
+  input:disabled { opacity: .45; }
+  #warmupEditor { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Codex Reorder <small id="version"></small></h1>
+  <div class="row">
+    <form id="connect" class="row">
+      <input id="key" type="password" placeholder="CPA 管理密钥" autocomplete="off">
+      <button id="save" type="submit" class="primary">连接</button>
+    </form>
+    <button id="toggle" type="button">暂停刷新</button>
+    <span id="status" class="muted"></span>
+  </div>
+</header>
+<main>
+  <section>
+    <div class="chips" id="config"></div>
+    <p class="hint" id="orderHint"></p>
+    <p class="hint" id="nextReason"></p>
+    <div id="warnings"></div>
+    <p class="hint err" id="hostError"></p>
+    <div class="actions"><button id="editToggle" type="button">编辑排序</button><button id="warmupToggle" type="button">开窗设置</button></div>
+    <div id="editor" hidden></div>
+    <div id="warmupEditor" hidden></div>
+  </section>
+  <section>
+    <div class="sec-head">
+      <h2>账号（按下一个新会话的分配顺序）</h2>
+      <button id="probeAll" type="button" title="经 CPA 的 api-call 逐个查询各账号的额度（走账号自己的代理），10 分钟内已有数据的账号跳过">刷新额度</button>
+      <span id="probeStatus" class="hint" style="margin:0"></span>
+    </div>
+    <ul id="probeLog" hidden></ul>
+    <div id="accounts" class="empty">输入管理密钥后加载。</div>
+  </section>
+  <section>
+    <h2>会话绑定</h2>
+    <div id="sessions" class="empty"></div>
+  </section>
+  <section>
+    <h2>分配记录 <small class="muted">（新会话、改绑、带前缀模型的请求；粘性命中不记录）</small></h2>
+    <div id="decisions" class="empty"></div>
+  </section>
+</main>
+<script>
+"use strict";
+(function () {
+  const KEY_STORAGE = "codex-reorder-management-key";
+  const prefix = location.pathname.split("/v0/resource/")[0] || "";
+  const stateURL = prefix + "/v0/management/codex-reorder/state";
+  const $ = (id) => document.getElementById(id);
+  const expanded = new Set();
+  let timer = null;
+  let paused = false;
+  let last = null;
+
+  const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const isSet = (t) => t && !String(t).startsWith("0001-01-01");
+  const fmtTime = (t) => {
+    if (!isSet(t)) return "—";
+    const d = new Date(t);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const fmtDur = (ms) => {
+    if (ms == null || !isFinite(ms)) return "—";
+    const neg = ms < 0; ms = Math.abs(ms);
+    const s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    let out = d > 0 ? `${d}天${h}小时` : h > 0 ? `${h}小时${m}分` : m > 0 ? `${m}分` : `${s % 60}秒`;
+    return neg ? "-" + out : out;
+  };
+  const since = (t, now) => (isSet(t) ? fmtDur(now - new Date(t)) : "—");
+  const until = (t, now) => (isSet(t) ? fmtDur(new Date(t) - now) : "—");
+
+  function bar(pct) {
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    const cls = p >= 100 ? "bar full" : p >= 80 ? "bar hot" : "bar";
+    return `<div class="${cls}"><span style="width:${p}%"></span></div>`;
+  }
+
+  function accountName(a) {
+    const main = a.email || a.label || a.name || a.id;
+    const sub = main === a.id ? "" : `<div class="muted mono">${esc(a.id)}</div>`;
+    return `<div class="name">${esc(main)}</div>${sub}`;
+  }
+
+  function accountStatus(a, now) {
+    if (!a.in_host && a.order === 0) return `<span class="badge b-muted">已不在 CPA</span>`;
+    if (a.disabled || String(a.status).toLowerCase() === "disabled") return `<span class="badge b-bad">已禁用</span>`;
+    if (isSet(a.next_retry_after) && new Date(a.next_retry_after) > now) return `<span class="badge b-warn">冷却至 ${esc(fmtTime(a.next_retry_after))}</span>`;
+    if (a.unavailable) return `<span class="badge b-warn">不可用</span>`;
+    if (a.exhausted) return `<span class="badge b-bad">额度用尽</span>`;
+    return `<span class="badge b-ok">可用</span>`;
+  }
+
+  const FIELD = {
+    sessions: "活跃会话少的优先", priority: "CPA 优先级高的优先", unopened_first: "周额度未开窗的优先",
+    unopened_last: "周额度未开窗的靠后", urgency: "紧迫度高的优先", reset: "周额度先重置的优先", remaining: "剩余额度多的优先",
+  };
+  const DECIDED = { only: "唯一候选", exhausted: "其余账号额度用尽", fallback: "各项打平，按最久未分配" };
+  const RANK_MARK = ["①", "②", "③", "④", "⑤", "⑥", "⑦"];
+  const pluginID = (location.pathname.match(/\/v0\/resource\/plugins\/([^/]+)\//) || [])[1] || "codex-reorder";
+  const previewURL = prefix + "/v0/management/codex-reorder/preview";
+  const configURL = prefix + "/v0/management/plugins/" + encodeURIComponent(pluginID) + "/config";
+  const fmtMult = (m) => (m && m !== 1 ? ` <span class="badge b-info">×${esc(m)}</span>` : "");
+
+  const UNOPENED = ["refreshed", "idle", "unknown"];
+
+  // warmupLine describes the automatic window opening of an unopened account.
+  function warmupLine(a, now) {
+    const mode = (last && last.config.warmup && last.config.warmup.mode) || "off";
+    const ago = isSet(a.warmup_last_at) ? esc(since(a.warmup_last_at, now)) + "前" : "";
+    if (a.warmup_forced) return `<div class="muted">已排队，马上开窗</div>`;
+    switch (a.warmup_last_result) {
+      case "failed":
+        if (a.warmup_done) break;
+        return `<div><span class="badge b-bad" title="${esc(a.warmup_last_error || "")}">开窗失败</span> <span class="muted">${ago}${isSet(a.warmup_plan_at) && mode !== "off" ? "，" + esc(fmtTime(a.warmup_plan_at)) + " 再试" : ""}</span></div>`;
+      case "not_opened":
+        if (a.warmup_done) return `<div class="muted" title="请求成功了，但响应里没有出现在计时的周窗口，可能所选模型有独立额度">${ago}已发开窗请求，但周窗口没开</div>`;
+        break;
+      case "sent":
+        if (a.warmup_done) return `<div class="muted">${ago}已发开窗请求，等待额度数据</div>`;
+        break;
+    }
+    if (mode === "off" || !isSet(a.warmup_plan_at)) return "";
+    const cap = last.config.warmup.max_per_account_per_day;
+    if (cap && a.warmup_today >= cap && new Date(a.warmup_plan_at) <= now) {
+      return `<div class="muted">今天已自动开窗 ${esc(a.warmup_today)} 次（每号每天上限），明天再开</div>`;
+    }
+    return `<div class="muted">计划 ${esc(fmtTime(a.warmup_plan_at))} 自动开窗</div>`;
+  }
+
+  function weeklyCell(a, now) {
+    if (UNOPENED.includes(a.weekly_state)) return weeklyUnopened(a, now) + warmupLine(a, now);
+    if (a.weekly_state === "open" && a.weekly) {
+      return `${bar(a.weekly.used_percent)}<div>已用 ${esc(Math.round(a.weekly.used_percent))}%${fmtMult(a.multiplier)} · ${esc(fmtTime(a.weekly.reset_at))} 重置</div><div class="muted">还剩 ${esc(until(a.weekly.reset_at, now))}</div>`;
+    }
+    if (a.weekly_state === "provisional") return `<span class="badge b-info">刚分配，等待额度数据</span>${fmtMult(a.multiplier)}<div class="muted">按 ${esc(fmtTime(a.reset_at))} 重置估算</div>`;
+    return weeklyUnopened(a, now);
+  }
+
+  function weeklyUnopened(a, now) {
+    if (a.weekly_state === "refreshed") return `<span class="badge b-warn">未开窗</span>${fmtMult(a.multiplier)}<div class="muted">上个周窗口 ${esc(fmtTime(a.weekly && a.weekly.reset_at))} 已重置，之后没用过</div>`;
+    if (a.weekly_state === "idle") return `<span class="badge b-warn">未开窗</span>${fmtMult(a.multiplier)}<div class="muted">额度查询确认${isSet(a.last_probe_at) ? "（" + esc(since(a.last_probe_at, now)) + "前）" : ""}</div>`;
+    return `<span class="badge b-muted">无数据</span>${fmtMult(a.multiplier)}<div class="muted">按未开窗算</div>`;
+  }
+
+  function urgencyCell(a, coef) {
+    if (!isSet(a.urgency_at)) return `<span class="muted">—</span>`;
+    const minutes = Math.round((a.remaining_percent || 0) * (a.multiplier || 1) * coef);
+    return `${esc(fmtTime(a.urgency_at))}<div class="muted">剩余 ${esc(Math.round(a.remaining_percent || 0))}% 抵 ${esc(fmtDur(minutes * 60000))}</div>`;
+  }
+
+  function headerFor(order, fields, label) {
+    const i = order.findIndex((f) => fields.includes(f));
+    return i >= 0 ? `<span class="rank" title="排序第 ${i + 1} 条">${RANK_MARK[i] || i + 1}</span>${label}` : label;
+  }
+
+  function shortCell(a, now) {
+    const w = a.short;
+    if (w && isSet(w.reset_at) && new Date(w.reset_at) > now) {
+      return `${bar(w.used_percent)}<div class="muted">${esc(Math.round(w.used_percent))}% · ${esc(fmtTime(w.reset_at))}</div>`;
+    }
+    if (a.short_state === "none") return `<span class="badge b-muted" title="查询结果里没有 5h 窗口（只有周额度的套餐）">无 5h 限制</span>`;
+    if (a.short_state === "idle" || w) return `<span class="muted" title="5h 窗口存在，但最近 5 小时没用过，下次请求时开始计时">未开始（0%）</span>`;
+    return `<span class="muted">—</span>`;
+  }
+
+  // imageLine shows the image generation window recorded from the last image
+  // response (passive: there is no query for it) and the credits flag.
+  function imageLine(a, now) {
+    const w = a.image;
+    const credits = a.has_credits === true ? ` <span class="badge b-info" title="最近一次生图响应里 x-codex-credits-has-credits 为 True：这个号有额外 credits">有 credits</span>` : "";
+    if (!w || !isSet(w.reset_at)) return credits ? `<div>${credits}</div>` : "";
+    const seen = isSet(w.observed_at) ? `数据来自 ${esc(since(w.observed_at, now))}前的生图响应` : "";
+    if (new Date(w.reset_at) <= now) {
+      return `<div class="muted" title="${seen}">生图：已重置${credits}</div>`;
+    }
+    const cls = w.used_percent >= 100 ? "badge b-bad" : "muted";
+    return `<div class="${cls}" title="生图单独的每日额度（imagegen_premium）；${seen}">生图：已用 ${esc(Math.round(w.used_percent))}% · ${esc(until(w.reset_at, now))}后重置</div>${credits ? `<div>${credits}</div>` : ""}`;
+  }
+
+  const rangeSec = (lo, hi) => (Number(lo) === Number(hi) ? fmtDur(lo * 1000) : fmtDur(lo * 1000) + "–" + fmtDur(hi * 1000));
+
+  function warmupChip(w, st) {
+    if (!w || w.mode === "off") return "自动周开窗：关闭";
+    const head = "自动周开窗：开启";
+    if (w.blocked) return head + " · 因排序用了“周额度未开窗的靠后”而不执行";
+    const hours = w.hours_all ? "不限时段" : esc(w.hours);
+    const delay = Number(w.delay_max_seconds) === 0 ? "不等待" : "等待 " + esc(rangeSec(w.delay_min_seconds, w.delay_max_seconds));
+    const spacing = Number(w.spacing_max_seconds) === 0 ? "不间隔" : "间隔 " + esc(rangeSec(w.spacing_min_seconds, w.spacing_max_seconds));
+    return `${head} · ${hours} · ${delay} · ${spacing} · 每号每天最多 ${esc(w.max_per_account_per_day)} 次 · 今天已开 ${esc((st && st.today) || 0)} 次 · ${esc(w.model)}${w.reasoning_effort ? "（" + esc(w.reasoning_effort) + "）" : ""}`;
+  }
+
+  function probeCell(a, now) {
+    let btn = a.in_host && !a.disabled ? `<button class="sm" type="button" data-probe="${esc(a.id)}" ${probing ? "disabled" : ""}>查询</button>` : "";
+    if (btn && UNOPENED.includes(a.weekly_state) && !a.warmup_forced) {
+      btn += ` <button class="sm" type="button" data-warmup="${esc(a.id)}" title="向这个号发一个极简请求，让周额度开始计时">立即开窗</button>`;
+    }
+    if (!isSet(a.last_probe_at)) return btn ? `${btn}<div class="muted">未查询过</div>` : `<span class="muted">—</span>`;
+    const when = `<div class="muted">${esc(since(a.last_probe_at, now))}前</div>`;
+    return a.last_probe_error
+      ? `${btn}<div><span class="badge b-bad" title="${esc(a.last_probe_error)}">查询失败</span></div>${when}`
+      : `${btn}${when}`;
+  }
+
+  function renderAccounts(data, now) {
+    const order = data.config.order || [];
+    const coef = data.config.urgency_minutes_per_percent || 0;
+    const byAccount = {};
+    for (const s of data.sessions || []) (byAccount[s.auth_id] = byAccount[s.auth_id] || []).push(s);
+    const rows = (data.accounts || []).map((a) => {
+      const order = a.order > 0 ? `<span class="order ${a.order === 1 ? "next" : ""}">${a.order}</span>` : `<span class="muted">—</span>`;
+      const sessions = byAccount[a.id] || [];
+      const open = expanded.has(a.id);
+      let html = `<tr class="clickable" data-id="${esc(a.id)}">
+        <td>${order}</td>
+        <td>${accountName(a)}</td>
+        <td>${accountStatus(a, now)}${a.priority ? `<div class="muted">优先级 ${esc(a.priority)}</div>` : ""}</td>
+        <td><span class="load">${esc(a.active_sessions)}</span>${sessions.length ? `<div class="muted">${open ? "收起" : "展开"}会话</div>` : ""}</td>
+        <td>${weeklyCell(a, now)}</td>
+        <td>${urgencyCell(a, coef)}</td>
+        <td>${shortCell(a, now)}${imageLine(a, now)}</td>
+        <td>${esc(since(a.last_assigned_at, now))}${isSet(a.last_assigned_at) ? " 前" : ""}<div class="muted">累计 ${esc(a.assignments || 0)} 次</div></td>
+        <td>${a.last_failure_status ? `<span class="badge b-warn">${esc(a.last_failure_status)}</span><div class="muted">${esc(since(a.last_failure_at, now))}前</div>` : `<span class="muted">—</span>`}</td>
+        <td>${probeCell(a, now)}</td>
+      </tr>`;
+      if (open && sessions.length) {
+        html += `<tr class="sub"><td colspan="10">${sessionTable(sessions, now, false)}</td></tr>`;
+      }
+      return html;
+    });
+    $("accounts").className = "";
+    $("accounts").innerHTML = rows.length ? `<table><thead><tr>
+      <th>顺序</th><th>账号</th><th>${headerFor(order, ["priority"], "状态")}</th><th>${headerFor(order, ["sessions"], "活跃会话")}</th><th>${headerFor(order, ["unopened_first", "unopened_last", "reset", "remaining"], "周额度")}</th><th>${headerFor(order, ["urgency"], "紧迫度（折算到期）")}</th><th>5h / 生图（仅展示）</th><th>最近分配</th><th>最近失败</th><th>额度查询</th>
+    </tr></thead><tbody>${rows.join("")}</tbody></table>` : `<div class="empty">还没有 Codex 账号。</div>`;
+  }
+
+  function nameOf(id) {
+    const a = (last && last.accounts || []).find((x) => x.id === id);
+    return a ? (a.email || a.label || a.name || a.id) : id;
+  }
+
+  function sessionTable(sessions, now, withAccount) {
+    const rows = sessions.map((s) => {
+      const acct = withAccount ? `<td>${esc(nameOf(s.auth_id))}</td>` : "";
+      return `<tr>
+        <td class="mono">${esc(s.session)}${s.parent ? `<div class="muted" title="客户端报告的父会话">父 ${esc(s.parent)}</div>` : ""}</td>${acct}
+        <td>${esc(since(s.bound_at, now))}<div class="muted">${esc(fmtTime(s.bound_at))} 起</div></td>
+        <td>${esc(since(s.last_seen_at, now))}</td>
+        <td>${esc(until(s.expires_at, now))}</td>
+        <td>${esc(s.requests)}<span class="muted"> / ${esc(s.successes)}</span></td>
+        <td class="muted">${esc(s.last_model || "")}</td>
+      </tr>`;
+    });
+    return `<table><thead><tr><th>会话</th>${withAccount ? "<th>绑定账号</th>" : ""}<th>已绑定</th><th>闲置</th><th>有效期剩余</th><th>请求 / 成功</th><th>模型</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+
+  function renderSessions(data, now) {
+    const sessions = data.sessions || [];
+    $("sessions").className = sessions.length ? "" : "empty";
+    $("sessions").innerHTML = sessions.length ? sessionTable(sessions, now, true) : "当前没有有效的会话绑定。";
+  }
+
+  const KIND = {
+    new: ["新会话", "b-info"], no_session: ["无会话 ID", "b-muted"], detour: ["临时转移", "b-warn"],
+    return: ["回到原账号", "b-ok"], rebind: ["改绑", "b-bad"], promote: ["转为改绑", "b-bad"], pinned: ["前缀模型", "b-info"],
+    held: ["无可换账号", "b-warn"], image: ["生图轮询", "b-muted"],
+  };
+
+  function renderDecisions(data, now) {
+    const list = data.decisions || [];
+    if (!list.length) { $("decisions").className = "empty"; $("decisions").innerHTML = "还没有记录。"; return; }
+    const rows = list.slice(0, 150).map((d) => {
+      const [label, cls] = KIND[d.kind] || [d.kind, "b-muted"];
+      const target = d.from_auth_id ? `${esc(nameOf(d.from_auth_id))} → <b>${esc(nameOf(d.auth_id))}</b>` : `<b>${esc(nameOf(d.auth_id))}</b>`;
+      let ranking = "";
+      if (d.ranking && d.ranking.length) {
+        const items = d.ranking.map((r, i) => `<li>${i + 1}. ${esc(nameOf(r.auth_id))} · 活跃 ${esc(r.load)} · ${r.opened ? "周额度 " + esc(fmtTime(r.reset_at)) + " 重置" : "周额度未开窗"} · 剩余 ${esc(Math.round(r.remaining_percent))}%${r.multiplier && r.multiplier !== 1 ? " ×" + esc(r.multiplier) : ""} · 紧迫度 ${esc(fmtTime(r.urgency_at))}${r.priority ? " · 优先级 " + esc(r.priority) : ""}${r.exhausted ? " · 额度用尽" : ""}</li>`).join("");
+        ranking = `<details><summary>当时的排序</summary><ol style="margin:4px 0;padding-left:18px;list-style:none">${items}</ol></details>`;
+      }
+      return `<tr>
+        <td class="muted" title="${esc(d.at)}">${esc(fmtTime(d.at))}<div>${esc(since(d.at, now))}前</div></td>
+        <td><span class="badge ${cls}">${esc(label)}</span></td>
+        <td class="mono">${esc(d.session || "")}</td>
+        <td>${target}</td>
+        <td>${esc(d.reason)}${d.decided_by ? `<div class="muted">决定规则：${esc(FIELD[d.decided_by] || DECIDED[d.decided_by] || d.decided_by)}</div>` : ""}${ranking}</td>
+      </tr>`;
+    });
+    $("decisions").className = "";
+    $("decisions").innerHTML = `<table><thead><tr><th>时间</th><th>类型</th><th>会话</th><th>账号</th><th>原因</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  }
+
+  function render(data) {
+    last = data;
+    const now = new Date(data.now);
+    $("version").textContent = "v" + data.version;
+    const c = data.config;
+    const order = c.order || [];
+    const plans = Object.keys(c.plan_multipliers || {}).length;
+    $("config").innerHTML = [
+      `紧迫度：剩余 1% 抵 ${esc(c.urgency_minutes_per_percent)} 分钟`,
+      plans ? `${esc(plans)} 个账号设了套餐倍数` : "套餐倍数全部为 1",
+      `粘性有效期 ${esc(fmtDur(c.session_ttl_seconds * 1000))}`,
+      "原账号服务不了即改绑，不转回",
+      `有效会话 ${esc((data.sessions || []).length)} 个`,
+      c.state_path ? `状态文件 ${esc(c.state_path)}` : "状态不保存",
+      c.manage_api_keys ? "也调度配置里的 API Key" : "只调度账号，API Key 交给 CPA",
+      warmupChip(c.warmup, data.warmup),
+    ].map((t) => `<span class="chip">${t}</span>`).join("");
+    $("orderHint").innerHTML = "新会话排序：" + (order.length ? order.map((f, i) => `${RANK_MARK[i] || i + 1} ${esc(FIELD[f] || f)}`).join(" → ") : "（未配置，按最久未分配轮流）") +
+      "。靠前的先比，打平才比下一条；已知额度用尽的账号固定排最后。已有会话在粘性有效期内固定在原账号，不参与排序。";
+    $("nextReason").textContent = data.next_reason ? "下一个新会话：" + nameOf((data.accounts || []).find((a) => a.order === 1)?.id || "") + "，" + data.next_reason : "";
+    $("warnings").innerHTML = (c.warnings || []).map((w) => `<p class="warn-line">⚠ 配置提醒：${esc(w)}</p>`).join("");
+    $("hostError").textContent = data.host_error ? "读取 CPA 账号列表失败：" + data.host_error : "";
+    renderAccounts(data, now);
+    renderSessions(data, now);
+    renderDecisions(data, now);
+  }
+
+  // ---- ranking editor ----
+  // Only the rules the plugin knows can be added, in any order. The two
+  // "unopened" rules contradict each other, so adding one replaces the other.
+  const RULES = {
+    sessions: { label: "活跃会话少的优先", hint: "均摊会话，控制单号并发" },
+    priority: { label: "CPA 优先级高的优先", hint: "按 CPA 里给账号设的 priority" },
+    unopened_first: { label: "周额度未开窗的优先", hint: "周额度窗口没在计时的号先用（无数据、上个窗口重置后没再用、查询确认未开窗）", group: "unopened" },
+    unopened_last: { label: "周额度未开窗的靠后", hint: "周额度窗口没在计时的号后用", group: "unopened" },
+    urgency: { label: "紧迫度高的优先", hint: "重置时间减去剩余额度折算的时间，早的先用" },
+    reset: { label: "周额度先重置的优先", hint: "纯粹按到期先后" },
+    remaining: { label: "剩余额度多的优先", hint: "剩余 % 乘套餐倍数，多的先用" },
+  };
+  let draft = null;
+  let previewTimer = null;
+  let previewSeq = 0;
+  let savedNote = "";
+
+  function authHeaders(extra) {
+    return Object.assign({ Authorization: "Bearer " + (sessionStorage.getItem(KEY_STORAGE) || "") }, extra || {});
+  }
+
+  // normalizeOrder keeps known rules once and one rule per group.
+  function normalizeOrder(order) {
+    const out = [], groups = new Set();
+    for (const f of order || []) {
+      const r = RULES[f];
+      if (!r || out.includes(f) || (r.group && groups.has(r.group))) continue;
+      if (r.group) groups.add(r.group);
+      out.push(f);
+    }
+    return out;
+  }
+
+  function draftFromConfig(c) {
+    const order = normalizeOrder(c.order);
+    const note = order.join(",") !== (c.order || []).join(",")
+      ? "当前配置里有重复或无法识别的规则，编辑器已整理掉；保存后才会写回配置。" : "";
+    const plans = {};
+    for (const a of (last && last.accounts) || []) plans[a.id] = (c.plan_multipliers || {})[a.id] || 1;
+    for (const [id, m] of Object.entries(c.plan_multipliers || {})) plans[id] = m;
+    return { order, note, coef: c.urgency_minutes_per_percent, plans };
+  }
+
+  function addRule(f) {
+    const r = RULES[f];
+    if (!r || draft.order.includes(f)) return;
+    const order = draft.order.slice();
+    const clash = r.group ? order.findIndex((x) => RULES[x].group === r.group) : -1;
+    if (clash >= 0) order[clash] = f; else order.push(f);
+    draft.order = order;
+  }
+
+  function draftBody(d) {
+    const plans = {};
+    for (const [id, m] of Object.entries(d.plans)) {
+      const v = Number(m);
+      if (isFinite(v) && v > 0 && v !== 1) plans[id] = v;
+    }
+    return { order: d.order.slice(), urgency_minutes_per_percent: Number(d.coef), plan_multipliers: plans };
+  }
+
+  function sameConfig(c, body) {
+    const plans = c.plan_multipliers || {};
+    const keys = Object.keys(plans).concat(Object.keys(body.plan_multipliers));
+    return (c.order || []).join(",") === body.order.join(",") &&
+      Number(c.urgency_minutes_per_percent) === body.urgency_minutes_per_percent &&
+      keys.every((k) => Number(plans[k] || 1) === Number(body.plan_multipliers[k] || 1));
+  }
+
+  function renderEditor() {
+    const d = draft;
+    const rows = d.order.map((f, i) => {
+      const r = RULES[f];
+      return `<li data-i="${i}" draggable="true">
+        <span class="num">${RANK_MARK[i] || i + 1}</span>
+        <span class="grow"><b>${esc(r.label)}</b><div class="muted">${esc(r.hint)}</div></span>
+        <button type="button" data-act="up" ${i === 0 ? "disabled" : ""} title="上移">↑</button>
+        <button type="button" data-act="down" ${i === d.order.length - 1 ? "disabled" : ""} title="下移">↓</button>
+        <button type="button" data-act="remove" title="删除">✕</button>
+      </li>`;
+    }).join("");
+    const options = Object.entries(RULES).filter(([f]) => !d.order.includes(f)).map(([f, r]) => {
+      let extra = "";
+      if (r.group) {
+        const clash = d.order.find((x) => RULES[x].group === r.group);
+        if (clash) extra = `（替换“${RULES[clash].label}”）`;
+      }
+      return `<option value="${f}">${esc(r.label + extra)}</option>`;
+    }).join("");
+    const accounts = ((last && last.accounts) || []).filter((a) => a.in_host || a.order > 0);
+    const planRows = accounts.map((a) => `<tr><td>${accountName(a)}</td><td><input type="number" min="0.1" step="any" data-plan="${esc(a.id)}" value="${esc(d.plans[a.id] || 1)}"></td></tr>`).join("");
+    $("editor").innerHTML = `<div class="editor">
+      <div>
+        <h3>排序规则（上面的先比，打平才比下一条）</h3>
+        ${d.note ? `<p class="warn-line">${esc(d.note)}</p>` : ""}
+        <ul class="rules" id="rules">${rows || `<li class="off"><span class="grow muted">没有规则：按最久没分配过的账号轮流。</span></li>`}</ul>
+        <div class="field-row">${options ? `<select id="addRule"><option value="">＋ 添加规则…</option>${options}</select>` : `<span class="muted">所有规则都已添加。</span>`}</div>
+        <p class="hint">拖动或用箭头调整先后。已知额度用尽的账号始终排最后。</p>
+        <div class="field-row"><b>紧迫度系数</b>剩余 1% 抵 <input type="number" id="coef" min="0" step="any" value="${esc(d.coef)}"> 分钟<span class="muted">（只影响紧迫度）</span></div>
+        <details ${Object.values(d.plans).some((m) => Number(m) !== 1) ? "open" : ""}><summary>套餐倍数（Plus / Team 普通席位 1，Team Pro 席位与 Pro 100 刀 10，Pro 200 刀 20，500 刀 50）</summary>
+          ${planRows ? `<table><tbody>${planRows}</tbody></table>` : `<div class="empty">还没有账号。</div>`}</details>
+      </div>
+      <div>
+        <h3>预览（当前账号状态下，两种排序的结果）</h3>
+        <div id="previewBox" class="muted">计算中…</div>
+        <div class="actions">
+          <button type="button" id="saveOrder" class="primary">保存并生效</button>
+          <button type="button" id="resetDraft">还原为当前配置</button>
+          <button type="button" id="defaultDraft">恢复默认</button>
+          <span id="saveStatus" class="muted"></span>
+        </div>
+        <p class="hint">保存会通过 CPA 管理接口写入 config.yaml（保留注释），CPA 自动重载后生效。只影响之后的新会话，已绑定的会话不会换号。</p>
+      </div>
+    </div>`;
+    schedulePreview();
+  }
+
+  function rankingList(view, other) {
+    const entries = (view && view.entries) || [];
+    if (!entries.length) return `<div class="empty">没有可用账号。</div>`;
+    const pos = {};
+    ((other && other.entries) || []).forEach((r, i) => (pos[r.auth_id] = i));
+    const items = entries.map((r, i) => {
+      let move = "";
+      if (other && pos[r.auth_id] != null && pos[r.auth_id] !== i) {
+        move = pos[r.auth_id] > i ? ` <span class="moved-up">↑${pos[r.auth_id] - i}</span>` : ` <span class="moved-down">↓${i - pos[r.auth_id]}</span>`;
+      }
+      return `<li><b>${esc(nameOf(r.auth_id))}</b>${move}<div class="muted">活跃 ${esc(r.load)} · ${r.opened ? "周额度 " + esc(fmtTime(r.reset_at)) + " 重置" : "周额度未开窗"} · 剩余 ${esc(Math.round(r.remaining_percent))}%${r.multiplier && r.multiplier !== 1 ? " ×" + esc(r.multiplier) : ""} · 紧迫度 ${esc(fmtTime(r.urgency_at))}${r.priority ? " · 优先级 " + esc(r.priority) : ""}${r.exhausted ? " · 额度用尽" : ""}</div></li>`;
+    }).join("");
+    return `<ol>${items}</ol><div class="hint">下一个新会话：${esc(nameOf(entries[0].auth_id))}；${esc(view.reason || "")}</div>`;
+  }
+
+  function schedulePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(runPreview, 300);
+  }
+
+  const orderText = (o) => (o || []).map((f) => FIELD[f] || f).join(" → ") || "未配置";
+
+  async function runPreview() {
+    if (!draft) return;
+    const seq = ++previewSeq;
+    const body = draftBody(draft);
+    try {
+      const resp = await fetch(previewURL, { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body), cache: "no-store" });
+      const data = await resp.json().catch(() => ({}));
+      if (seq !== previewSeq || !draft) return;
+      if (!resp.ok) {
+        $("previewBox").innerHTML = `<p class="err">${esc(data.error || "HTTP " + resp.status)}</p>`;
+        $("saveOrder").disabled = true;
+        return;
+      }
+      const warnings = (data.config.warnings || []).map((w) => `<p class="warn-line">⚠ ${esc(w)}</p>`).join("");
+      const unchanged = last && sameConfig(last.config, body);
+      $("previewBox").innerHTML = `${warnings}<div class="cmp">
+        <div><h3>当前：${esc(orderText(last && last.config.order))}</h3>${rankingList(data.current)}</div>
+        <div><h3>修改后：${esc(orderText(body.order))}</h3>${rankingList(data.proposed, data.current)}</div>
+      </div>`;
+      $("saveOrder").disabled = unchanged;
+      if (unchanged && savedNote) $("saveStatus").innerHTML = `<span class="ok">${esc(savedNote)}</span>`;
+      else $("saveStatus").textContent = unchanged ? "与当前配置相同" : "";
+    } catch (e) {
+      if (seq === previewSeq && draft) $("previewBox").innerHTML = `<p class="err">预览失败：${esc(e.message)}</p>`;
+    }
+  }
+
+  function describeChange(c, body) {
+    const lines = [];
+    if ((c.order || []).join(",") !== body.order.join(",")) lines.push("排序：" + orderText(c.order) + "\n   改为：" + orderText(body.order));
+    if (Number(c.urgency_minutes_per_percent) !== body.urgency_minutes_per_percent) lines.push(`紧迫度系数：${c.urgency_minutes_per_percent} → ${body.urgency_minutes_per_percent} 分钟/1%`);
+    const plans = c.plan_multipliers || {};
+    for (const id of new Set(Object.keys(plans).concat(Object.keys(body.plan_multipliers)))) {
+      const a = Number(plans[id] || 1), b = Number(body.plan_multipliers[id] || 1);
+      if (a !== b) lines.push(`套餐倍数 ${nameOf(id)}：${a} → ${b}`);
+    }
+    return lines.join("\n");
+  }
+
+  async function saveDraft() {
+    const body = draftBody(draft);
+    const change = describeChange(last.config, body);
+    if (!change) return;
+    if (!confirm("将写入 CPA 的 config.yaml 并立即生效（只影响之后的新会话）：\n\n" + change)) return;
+    $("saveOrder").disabled = true;
+    $("saveStatus").textContent = "保存中…";
+    try {
+      const resp = await fetch(configURL, { method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.message || data.error || "HTTP " + resp.status);
+      }
+      $("saveStatus").textContent = "已写入配置，等待 CPA 重载…";
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        await load(true);
+        if (last && sameConfig(last.config, body)) {
+          savedNote = "已保存并生效（" + new Date().toLocaleTimeString() + "）";
+          if (draft) { draft = draftFromConfig(last.config); renderEditor(); }
+          return;
+        }
+      }
+      $("saveStatus").innerHTML = `<span class="err">已写入 config.yaml，但 15 秒内插件还没收到新配置；请检查 CPA 日志</span>`;
+    } catch (e) {
+      $("saveStatus").innerHTML = `<span class="err">保存失败：${esc(e.message)}</span>`;
+      $("saveOrder").disabled = false;
+    }
+  }
+
+  $("editToggle").addEventListener("click", () => {
+    const box = $("editor");
+    if (box.hidden) {
+      if (!last) return;
+      draft = draftFromConfig(last.config);
+      box.hidden = false;
+      $("editToggle").textContent = "收起排序编辑";
+      renderEditor();
+    } else {
+      box.hidden = true;
+      draft = null;
+      clearTimeout(previewTimer);
+      $("editToggle").textContent = "编辑排序";
+    }
+  });
+
+  function moveRule(from, to) {
+    const n = draft.order.length;
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from === to || from < 0 || to < 0 || from >= n || to >= n) return false;
+    const [f] = draft.order.splice(from, 1);
+    draft.order.splice(to, 0, f);
+    return true;
+  }
+
+  $("editor").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || !draft) return;
+    savedNote = "";
+    if (btn.id === "saveOrder") return void saveDraft();
+    if (btn.id === "resetDraft") { draft = draftFromConfig(last.config); return renderEditor(); }
+    if (btn.id === "defaultDraft") {
+      draft.order = ["priority", "sessions", "unopened_first", "urgency"];
+      draft.coef = 1;
+      draft.note = "";
+      return renderEditor();
+    }
+    const li = btn.closest("li");
+    if (!li) return;
+    const i = Number(li.dataset.i);
+    if (btn.dataset.act === "remove") { draft.order.splice(i, 1); draft.note = ""; return renderEditor(); }
+    if (btn.dataset.act === "up" && moveRule(i, i - 1)) return renderEditor();
+    if (btn.dataset.act === "down" && moveRule(i, i + 1)) return renderEditor();
+  });
+
+  $("editor").addEventListener("change", (e) => {
+    if (!draft || e.target.id !== "addRule" || !e.target.value) return;
+    savedNote = "";
+    addRule(e.target.value);
+    renderEditor();
+  });
+
+  $("editor").addEventListener("input", (e) => {
+    if (!draft) return;
+    const t = e.target;
+    if (t.id === "coef") { savedNote = ""; draft.coef = t.value; schedulePreview(); }
+    if (t.dataset.plan) { savedNote = ""; draft.plans[t.dataset.plan] = t.value; schedulePreview(); }
+  });
+
+  let dragFrom = -1;
+  $("editor").addEventListener("dragstart", (e) => {
+    const li = e.target.closest && e.target.closest("#rules li");
+    if (li) { dragFrom = Number(li.dataset.i); e.dataTransfer.effectAllowed = "move"; }
+  });
+  $("editor").addEventListener("dragover", (e) => {
+    const li = e.target.closest && e.target.closest("#rules li");
+    if (li && dragFrom >= 0) { e.preventDefault(); li.classList.add("dragover"); }
+  });
+  $("editor").addEventListener("dragleave", (e) => {
+    const li = e.target.closest && e.target.closest("#rules li");
+    if (li) li.classList.remove("dragover");
+  });
+  $("editor").addEventListener("drop", (e) => {
+    const li = e.target.closest && e.target.closest("#rules li");
+    if (!li || dragFrom < 0 || !draft) return;
+    e.preventDefault();
+    savedNote = "";
+    const moved = moveRule(dragFrom, Number(li.dataset.i));
+    dragFrom = -1;
+    if (moved) renderEditor(); else li.classList.remove("dragover");
+  });
+
+  // ---- window-opening settings ----
+  // Saved like the ranking: CPA's plugin config PATCH writes config.yaml and CPA
+  // reloads the plugin. Every change is first checked by the preview route,
+  // which parses it exactly like the real configuration.
+  const WARMUP_DEFAULT = { model: "gpt-6-luna", effort: "low", hoursAll: false, hoursFrom: "09:00", hoursTo: "22:00", tz: "Asia/Shanghai",
+    noDelay: false, delayMin: 20, delayMax: 90, noSpacing: true, spacingMin: 5, spacingMax: 20, maxPerAccount: 2 };
+  const MODE_TEXT = { off: "关闭", on: "开启" };
+  const WARMUP_KEYS = ["mode", "model", "reasoning_effort", "hours", "timezone", "delay_min_seconds", "delay_max_seconds", "spacing_min_seconds", "spacing_max_seconds", "max_per_account_per_day"];
+  // Reasoning levels of CPA 8.0.64's built-in Codex models
+  // (internal/registry/models/models.json, codex-free/plus/team/pro).
+  const CODEX_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+  const MODEL_LEVELS = {
+    "gpt-6-luna": CODEX_LEVELS, "gpt-5.6-luna": CODEX_LEVELS, "gpt-6.1-terra": CODEX_LEVELS, "gpt-5.6-terra": CODEX_LEVELS,
+    "gpt-6-sol": CODEX_LEVELS, "gpt-6.1-sol": CODEX_LEVELS, "gpt-5.6-sol": CODEX_LEVELS, "gpt-6-astra": CODEX_LEVELS,
+    "gpt-6-chat-thinking": CODEX_LEVELS, "codex-auto-review": ["low", "medium", "high", "xhigh"],
+  };
+  let wdraft = null;
+  let wcheckTimer = null;
+  let wcheckSeq = 0;
+  let wsavedNote = "";
+  const toMin = (sec) => Number((Number(sec || 0) / 60).toFixed(2));
+  const toSec = (min) => Math.round(Number(min) * 60);
+  const hm = (t) => String(t).trim().replace(/^(\d):/, "0$1:");
+  // durArg writes seconds the way config.yaml usually reads ("90m", "2h", "45s").
+  const durArg = (sec) => (sec > 0 && sec % 3600 === 0 ? sec / 3600 + "h" : sec > 0 && sec % 60 === 0 ? sec / 60 + "m" : sec + "s");
+  const sameWarmup = (a, b) => !!a && !!b && WARMUP_KEYS.every((k) => a[k] === b[k]);
+  const levelsFor = (model) => MODEL_LEVELS[String(model || "").trim()] || null;
+  const hoursText = (v) => (v.hours_all ? "不限时段" : `${v.hours}（${v.timezone}）`);
+  const delayText = (v) => (Number(v.delay_max_seconds) === 0 ? "不等待" : rangeSec(v.delay_min_seconds, v.delay_max_seconds));
+  const spacingText = (v) => (Number(v.spacing_max_seconds) === 0 ? "不间隔" : rangeSec(v.spacing_min_seconds, v.spacing_max_seconds));
+
+  function warmupDraftFrom(w) {
+    const [from, to] = String(w.hours || "09:00-22:00").split("-");
+    const noDelay = Number(w.delay_max_seconds) === 0, noSpacing = Number(w.spacing_max_seconds) === 0;
+    return {
+      mode: w.mode === "on" ? "on" : "off", model: w.model || "", effort: w.reasoning_effort || "", tz: w.timezone || "",
+      hoursAll: !!w.hours_all, hoursFrom: w.hours_all ? WARMUP_DEFAULT.hoursFrom : from || "", hoursTo: w.hours_all ? WARMUP_DEFAULT.hoursTo : to || "",
+      noDelay, delayMin: noDelay ? WARMUP_DEFAULT.delayMin : toMin(w.delay_min_seconds), delayMax: noDelay ? WARMUP_DEFAULT.delayMax : toMin(w.delay_max_seconds),
+      noSpacing, spacingMin: noSpacing ? WARMUP_DEFAULT.spacingMin : toMin(w.spacing_min_seconds), spacingMax: noSpacing ? WARMUP_DEFAULT.spacingMax : toMin(w.spacing_max_seconds),
+      maxPerAccount: w.max_per_account_per_day,
+    };
+  }
+
+  function warmupBody(d) {
+    return {
+      warmup_enabled: d.mode === "on",
+      warmup_model: String(d.model).trim(),
+      warmup_reasoning_effort: String(d.effort).trim(),
+      warmup_hours: d.hoursAll ? "00:00-24:00" : hm(d.hoursFrom) + "-" + hm(d.hoursTo),
+      warmup_timezone: String(d.tz).trim(),
+      warmup_delay: d.noDelay ? "0s" : durArg(toSec(d.delayMin)) + "-" + durArg(toSec(d.delayMax)),
+      warmup_spacing: d.noSpacing ? "0s" : durArg(toSec(d.spacingMin)) + "-" + durArg(toSec(d.spacingMax)),
+      warmup_max_per_account_per_day: Number(d.maxPerAccount),
+    };
+  }
+
+  // changedKeys keeps only the settings that differ between two views, so
+  // saving touches as few lines of config.yaml as possible.
+  function changedKeys(body, cur, next) {
+    const out = {};
+    const diff = (...keys) => keys.some((k) => cur[k] !== next[k]);
+    if (diff("mode")) out.warmup_enabled = body.warmup_enabled;
+    if (diff("model")) out.warmup_model = body.warmup_model;
+    if (diff("reasoning_effort")) out.warmup_reasoning_effort = body.warmup_reasoning_effort;
+    if (diff("hours")) out.warmup_hours = body.warmup_hours;
+    if (diff("timezone")) out.warmup_timezone = body.warmup_timezone;
+    if (diff("delay_min_seconds", "delay_max_seconds")) out.warmup_delay = body.warmup_delay;
+    if (diff("spacing_min_seconds", "spacing_max_seconds")) out.warmup_spacing = body.warmup_spacing;
+    if (diff("max_per_account_per_day")) out.warmup_max_per_account_per_day = body.warmup_max_per_account_per_day;
+    return out;
+  }
+
+  // checkWarmup asks the plugin to parse the draft. It returns the resulting
+  // settings ({view}) or {error}.
+  async function checkWarmup(d) {
+    const ranges = [];
+    if (!d.noDelay) ranges.push(["等待", d.delayMin, d.delayMax]);
+    if (!d.noSpacing) ranges.push(["间隔", d.spacingMin, d.spacingMax]);
+    for (const [name, lo, hi] of ranges) {
+      if ([lo, hi].some((v) => String(v).trim() === "" || !isFinite(Number(v)))) return { error: `请把${name}的分钟数填完整（不要${name}就勾选旁边的选项）` };
+      if (Number(lo) < 0 || Number(hi) < 0) return { error: `${name}不能是负数` };
+      if (Number(lo) > Number(hi)) return { error: `${name}的最小值不能大于最大值` };
+    }
+    if (!Number.isInteger(Number(d.maxPerAccount)) || Number(d.maxPerAccount) < 1) return { error: "每个号每天最多次数要填不小于 1 的整数" };
+    const levels = levelsFor(d.model), effort = String(d.effort).trim().toLowerCase();
+    if (levels && effort && !levels.includes(effort)) return { error: `${String(d.model).trim()} 不支持思考强度 ${effort}（可选 ${levels.join(" / ")}），CPA 会拒绝这个请求` };
+    const resp = await fetch(previewURL, { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(warmupBody(d)), cache: "no-store" });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) return { error: "配置检查未通过：" + (data.error || "HTTP " + resp.status) };
+    return { view: data.config.warmup };
+  }
+
+  function describeWarmupChange(a, b) {
+    const lines = [];
+    const row = (label, x, y) => { if (x !== y) lines.push(`${label}：${x} → ${y}`); };
+    row("自动开窗", MODE_TEXT[a.mode] || a.mode, MODE_TEXT[b.mode] || b.mode);
+    row("模型", a.model || "（空）", b.model || "（空）");
+    row("思考强度", a.reasoning_effort || "不指定", b.reasoning_effort || "不指定");
+    row("时段", hoursText(a), hoursText(b));
+    row("停止计时后等待", delayText(a), delayText(b));
+    row("两次开窗间隔", spacingText(a), spacingText(b));
+    row("每个号每天最多", a.max_per_account_per_day + " 次", b.max_per_account_per_day + " 次");
+    return lines.join("\n");
+  }
+
+  // effortControl is a drop-down for models with known levels, else free text.
+  function effortControl(d) {
+    const levels = levelsFor(d.model);
+    const cur = String(d.effort).trim().toLowerCase();
+    if (!levels) {
+      return `<input type="text" class="w-effort" data-w="effort" value="${esc(d.effort)}" placeholder="不指定" spellcheck="false">
+        <span class="muted">这个模型的可选级别未知，按上游支持的填</span>`;
+    }
+    const opts = [["", "不指定（用模型默认）"]].concat(levels.map((l) => [l, l]));
+    if (cur && !levels.includes(cur)) opts.push([cur, cur + "（不支持）"]);
+    return `<select data-w="effort">${opts.map(([v, t]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+      <span class="muted">这个模型不能关闭思考，low 最省；不指定时用模型默认级别（通常 medium）</span>`;
+  }
+
+  function renderWarmupEditor() {
+    const d = wdraft;
+    const radio = (m, text) => `<label><input type="radio" name="wmode" value="${m}" ${d.mode === m ? "checked" : ""}>${text}</label>`;
+    const flag = (name, text) => `<label class="nolimit"><input type="checkbox" data-wflag="${name}" ${d[name] ? "checked" : ""}>${text}</label>`;
+    const dis = (name) => (d[name] ? "disabled" : "");
+    const models = Object.keys(MODEL_LEVELS).map((m) => `<option value="${esc(m)}">`).join("");
+    $("warmupEditor").innerHTML = `<div class="wform">
+      <span class="lbl">自动开窗</span>
+      <div class="modes">${radio("off", "关闭")}${radio("on", "开启（真的发请求）")}</div>
+      <span class="lbl">模型</span>
+      <div class="field-row" style="margin:0"><input type="text" class="w-model" data-w="model" value="${esc(d.model)}" list="modelList" spellcheck="false">
+        <datalist id="modelList">${models}</datalist>
+        <span class="muted">要计入主额度；发完后插件会核对周窗口是否真的开了</span></div>
+      <span class="lbl">思考强度</span>
+      <div class="field-row" style="margin:0" id="effortBox">${effortControl(d)}</div>
+      <span class="lbl">开窗时段</span>
+      <div class="field-row" style="margin:0">${flag("hoursAll", "不限时段")}
+        <input type="text" class="hm" data-w="hoursFrom" value="${esc(d.hoursFrom)}" placeholder="09:00" ${dis("hoursAll")}> 至
+        <input type="text" class="hm" data-w="hoursTo" value="${esc(d.hoursTo)}" placeholder="22:00" ${dis("hoursAll")}>
+        <b>时区</b><input type="text" class="w-tz" data-w="tz" value="${esc(d.tz)}" placeholder="Asia/Shanghai" spellcheck="false" ${dis("hoursAll")}>
+        <span class="muted">结束早于开始表示跨零点</span></div>
+      <span class="lbl">停止计时后等待</span>
+      <div class="field-row" style="margin:0">${flag("noDelay", "不等待")}
+        <input type="number" min="0" step="any" data-w="delayMin" value="${esc(d.delayMin)}" ${dis("noDelay")}> 至
+        <input type="number" min="0" step="any" data-w="delayMax" value="${esc(d.delayMax)}" ${dis("noDelay")}> 分钟（随机）
+        <span class="muted">${d.noDelay ? "窗口一停止计时，下一次检查（1 分钟内）就开；真实请求没机会先把它打开" : "期间有真实请求开了窗就不再发；落在时段外顺延到下一个时段"}</span></div>
+      <span class="lbl">两次开窗间隔</span>
+      <div class="field-row" style="margin:0">${flag("noSpacing", "不间隔")}
+        <input type="number" min="0" step="any" data-w="spacingMin" value="${esc(d.spacingMin)}" ${dis("noSpacing")}> 至
+        <input type="number" min="0" step="any" data-w="spacingMax" value="${esc(d.spacingMax)}" ${dis("noSpacing")}> 分钟（随机，所有账号共用）
+        <span class="muted">${d.noSpacing ? "插件每分钟检查一次，一次最多开一个号" : ""}</span></div>
+      <span class="lbl">每个号每天最多</span>
+      <div class="field-row" style="margin:0"><input type="number" min="1" step="1" data-w="maxPerAccount" value="${esc(d.maxPerAccount)}"> 次
+        <span class="muted">成功、失败都算，手动开窗不算。每次未开窗只自动开一次、失败顺延到第二天，正常最多 1 次；这个上限防止状态来回跳时反复开</span></div>
+      <span class="lbl">提示词</span>
+      <div class="muted">每次随机生成“Reply with 数字.”，例如 Reply with 4821.</div>
+    </div>
+    <div id="wCheck"></div>
+    <div class="actions">
+      <button type="button" id="wSave" class="primary" disabled>保存并生效</button>
+      <button type="button" id="wReset">还原为当前配置</button>
+      <button type="button" id="wDefault">参数恢复默认</button>
+      <span id="wStatus" class="muted"></span>
+    </div>
+    <p class="hint">保存会通过 CPA 管理接口写入 config.yaml（保留注释），CPA 自动重载后生效。手动“立即开窗”不受开关、时段、间隔和每日上限限制。</p>`;
+    scheduleWarmupCheck();
+  }
+
+  function scheduleWarmupCheck() {
+    clearTimeout(wcheckTimer);
+    wcheckTimer = setTimeout(runWarmupCheck, 300);
+  }
+
+  async function runWarmupCheck() {
+    if (!wdraft) return;
+    const seq = ++wcheckSeq;
+    let res;
+    try { res = await checkWarmup(wdraft); } catch (e) { res = { error: "检查失败：" + e.message }; }
+    if (seq !== wcheckSeq || !wdraft) return;
+    if (res.error) {
+      $("wCheck").innerHTML = `<p class="err">${esc(res.error)}</p>`;
+      $("wSave").disabled = true;
+      $("wStatus").textContent = "";
+      return;
+    }
+    const cur = last && last.config.warmup;
+    const notes = [];
+    if (res.view.blocked) notes.push(`<p class="warn-line">⚠ 排序里用了“周额度未开窗的靠后”，自动开窗不会执行（手动“立即开窗”仍可用）</p>`);
+    if (res.view.mode === "on" && cur && cur.mode !== "on") notes.push(`<p class="warn-line">开启后，到计划时间的账号会真的收到开窗请求。</p>`);
+    $("wCheck").innerHTML = notes.join("");
+    const unchanged = sameWarmup(cur, res.view);
+    $("wSave").disabled = unchanged;
+    if (unchanged && wsavedNote) $("wStatus").innerHTML = `<span class="ok">${esc(wsavedNote)}</span>`;
+    else $("wStatus").textContent = unchanged ? "与当前配置相同" : "";
+  }
+
+  async function saveWarmup() {
+    if (!wdraft || !last) return;
+    clearTimeout(wcheckTimer);
+    const draftNow = Object.assign({}, wdraft);
+    const res = await checkWarmup(draftNow).catch((e) => ({ error: "检查失败：" + e.message }));
+    if (res.error) { $("wCheck").innerHTML = `<p class="err">${esc(res.error)}</p>`; return; }
+    const change = describeWarmupChange(last.config.warmup, res.view);
+    if (!change) return;
+    let msg = "将写入 CPA 的 config.yaml 并立即生效：\n\n" + change;
+    if (res.view.mode === "on" && last.config.warmup.mode !== "on") msg += "\n\n开启后，到计划时间的账号会真的收到开窗请求。";
+    if (!confirm(msg)) return;
+    $("wSave").disabled = true;
+    $("wStatus").textContent = "保存中…";
+    try {
+      const patch = changedKeys(warmupBody(draftNow), last.config.warmup, res.view);
+      const resp = await fetch(configURL, { method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(patch) });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.message || data.error || "HTTP " + resp.status);
+      }
+      $("wStatus").textContent = "已写入配置，等待 CPA 重载…";
+      for (let i = 0; i < 30; i++) {
+        await sleep(500);
+        await load(true);
+        if (last && sameWarmup(last.config.warmup, res.view)) {
+          wsavedNote = "已保存并生效（" + new Date().toLocaleTimeString() + "）";
+          if (wdraft) { wdraft = warmupDraftFrom(last.config.warmup); renderWarmupEditor(); }
+          return;
+        }
+      }
+      $("wStatus").innerHTML = `<span class="err">已写入 config.yaml，但 15 秒内插件还没收到新配置；请检查 CPA 日志</span>`;
+    } catch (e) {
+      $("wStatus").innerHTML = `<span class="err">保存失败：${esc(e.message)}</span>`;
+      $("wSave").disabled = false;
+    }
+  }
+
+  $("warmupToggle").addEventListener("click", () => {
+    const box = $("warmupEditor");
+    if (box.hidden) {
+      if (!last) return;
+      wdraft = warmupDraftFrom(last.config.warmup || {});
+      wsavedNote = "";
+      box.hidden = false;
+      $("warmupToggle").textContent = "收起开窗设置";
+      renderWarmupEditor();
+    } else {
+      box.hidden = true;
+      wdraft = null;
+      clearTimeout(wcheckTimer);
+      $("warmupToggle").textContent = "开窗设置";
+    }
+  });
+
+  const onWarmupInput = (e) => {
+    if (!wdraft) return;
+    const t = e.target;
+    wsavedNote = "";
+    if (t.name === "wmode") { wdraft.mode = t.value; return scheduleWarmupCheck(); }
+    if (t.dataset.wflag) {
+      if (e.type !== "change") return;
+      wdraft[t.dataset.wflag] = t.checked;
+      return renderWarmupEditor();
+    }
+    if (!t.dataset.w) return;
+    const before = levelsFor(wdraft.model);
+    wdraft[t.dataset.w] = t.value;
+    if (t.dataset.w === "model" && before !== levelsFor(wdraft.model)) $("effortBox").innerHTML = effortControl(wdraft);
+    scheduleWarmupCheck();
+  };
+  $("warmupEditor").addEventListener("input", onWarmupInput);
+  $("warmupEditor").addEventListener("change", onWarmupInput);
+
+  $("warmupEditor").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (!btn || !wdraft) return;
+    wsavedNote = "";
+    if (btn.id === "wSave") return void saveWarmup();
+    if (btn.id === "wReset") { wdraft = warmupDraftFrom(last.config.warmup || {}); return renderWarmupEditor(); }
+    if (btn.id === "wDefault") { wdraft = Object.assign({ mode: wdraft.mode }, WARMUP_DEFAULT); return renderWarmupEditor(); }
+  });
+
+  // Quota queries. The page asks the plugin which accounts to query, sends each
+  // query through CPA's own api-call (CPA fills in the account's token and uses
+  // the account's proxy_url), and hands the response back to the plugin. One
+  // account at a time, spaced out; nothing runs unless the button is clicked.
+  const probeTargetsURL = prefix + "/v0/management/codex-reorder/probe-targets";
+  const probeURL = prefix + "/v0/management/codex-reorder/probe";
+  const apiCallURL = prefix + "/v0/management/api-call";
+  const SKIP = { fresh: "10 分钟内已有数据", disabled: "已禁用", no_index: "CPA 未给出账号索引" };
+  let probing = false;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function setProbing(on) {
+    probing = on;
+    $("probeAll").disabled = on;
+    document.querySelectorAll("button[data-probe]").forEach((b) => { b.disabled = on; });
+  }
+
+  async function queryOne(plan, t) {
+    const started = performance.now();
+    const result = { auth_id: t.auth_id };
+    try {
+      const header = { Authorization: "Bearer $TOKEN$", "Content-Type": "application/json", "User-Agent": plan.user_agent };
+      if (t.account_id) header["Chatgpt-Account-Id"] = t.account_id;
+      const resp = await fetch(apiCallURL, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ auth_index: t.auth_index, method: "GET", url: plan.url, header }),
+      });
+      const text = await resp.text();
+      if (!resp.ok) {
+        result.error = `CPA api-call HTTP ${resp.status}: ${text.slice(0, 160)}`;
+      } else {
+        const j = JSON.parse(text);
+        result.status_code = j.status_code;
+        result.body = j.body || "";
+      }
+    } catch (e) {
+      result.error = e.message || String(e);
+    }
+    result.elapsed_ms = Math.round(performance.now() - started);
+    const resp = await fetch(probeURL, { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(result) });
+    const out = await resp.json().catch(() => ({}));
+    return resp.ok && out.ok ? null : (out.error || "HTTP " + resp.status);
+  }
+
+  async function runProbe(onlyID) {
+    if (probing || !sessionStorage.getItem(KEY_STORAGE)) return;
+    setProbing(true);
+    const log = $("probeLog");
+    log.hidden = true;
+    log.innerHTML = "";
+    try {
+      $("probeStatus").textContent = "正在读取要查询的账号…";
+      const resp = await fetch(probeTargetsURL + (onlyID ? "?auth_id=" + encodeURIComponent(onlyID) : ""), { headers: authHeaders(), cache: "no-store" });
+      if (!resp.ok) throw new Error("读取查询目标失败：HTTP " + resp.status);
+      const plan = await resp.json();
+      if (plan.host_error) throw new Error("读取 CPA 账号列表失败：" + plan.host_error);
+      const todo = (plan.targets || []).filter((t) => !t.skip);
+      const skipped = {};
+      for (const t of plan.targets || []) if (t.skip) skipped[t.skip] = (skipped[t.skip] || 0) + 1;
+      const failures = [];
+      for (let i = 0; i < todo.length; i++) {
+        if (i > 0) await sleep(plan.interval_ms || 2000);
+        $("probeStatus").textContent = `正在查询 ${i + 1}/${todo.length}：${todo[i].name}`;
+        const err = await queryOne(plan, todo[i]);
+        if (err) failures.push(`${todo[i].name}：${err}`);
+      }
+      const skipText = Object.entries(skipped).map(([k, n]) => `${n} 个${SKIP[k] || k}`).join("，");
+      $("probeStatus").textContent = `额度查询完成：成功 ${todo.length - failures.length}，失败 ${failures.length}` +
+        (skipText ? `；跳过 ${skipText}` : "") + `（${new Date().toLocaleTimeString()}）`;
+      if (failures.length) {
+        log.innerHTML = failures.map((f) => `<li class="err">${esc(f)}</li>`).join("");
+        log.hidden = false;
+      }
+    } catch (e) {
+      $("probeStatus").innerHTML = `<span class="err">${esc(e.message || String(e))}</span>`;
+    } finally {
+      setProbing(false);
+      load(true);
+    }
+  }
+
+  $("probeAll").addEventListener("click", () => runProbe(""));
+
+  const warmupURL = prefix + "/v0/management/codex-reorder/warmup";
+  async function openNow(id) {
+    const name = nameOf(id);
+    if (!confirm(`向 ${name} 发一个极简请求，让它的周额度开始计时？\n会消耗极少额度；结果会显示在“周额度”一列。`)) return;
+    try {
+      const resp = await fetch(warmupURL, { method: "POST", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ auth_id: id }) });
+      const out = await resp.json().catch(() => ({}));
+      $("probeStatus").innerHTML = resp.ok
+        ? `已排队：${esc(name)} 马上开窗，结果几秒后显示在该行（${esc(new Date().toLocaleTimeString())}）`
+        : `<span class="err">${esc(name)} 开窗失败：${esc(out.error || "HTTP " + resp.status)}</span>`;
+    } catch (e) {
+      $("probeStatus").innerHTML = `<span class="err">${esc(e.message || String(e))}</span>`;
+    }
+    load(true);
+  }
+
+  // load fetches the state. Background refreshes are skipped while the tab is
+  // hidden or a previous refresh is still running, so an idle or slow dashboard
+  // costs CPA nothing extra.
+  let loading = false;
+  async function load(force) {
+    const key = sessionStorage.getItem(KEY_STORAGE) || "";
+    if (!key) { $("status").textContent = "未连接"; return; }
+    if (!force && (document.hidden || loading)) return;
+    loading = true;
+    try {
+      const resp = await fetch(stateURL, { headers: { Authorization: "Bearer " + key }, cache: "no-store" });
+      if (resp.status === 401 || resp.status === 403) {
+        $("status").innerHTML = `<span class="err">管理密钥无效</span>`;
+        return;
+      }
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      render(await resp.json());
+      $("status").textContent = "更新于 " + new Date().toLocaleTimeString();
+    } catch (e) {
+      $("status").innerHTML = `<span class="err">加载失败：${esc(e.message)}</span>`;
+    } finally {
+      loading = false;
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && !paused) load();
+  });
+
+  function schedule() {
+    clearInterval(timer);
+    if (!paused) timer = setInterval(load, 5000);
+  }
+
+  $("connect").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const v = $("key").value.trim();
+    if (v) sessionStorage.setItem(KEY_STORAGE, v);
+    $("key").value = "";
+    load(true);
+    schedule();
+  });
+  $("toggle").addEventListener("click", () => {
+    paused = !paused;
+    $("toggle").textContent = paused ? "继续刷新" : "暂停刷新";
+    schedule();
+  });
+  $("accounts").addEventListener("click", (e) => {
+    const probeBtn = e.target.closest("button[data-probe]");
+    if (probeBtn) { e.stopPropagation(); runProbe(probeBtn.getAttribute("data-probe")); return; }
+    const warmupBtn = e.target.closest("button[data-warmup]");
+    if (warmupBtn) { e.stopPropagation(); openNow(warmupBtn.getAttribute("data-warmup")); return; }
+    const tr = e.target.closest("tr.clickable");
+    if (!tr) return;
+    const id = tr.getAttribute("data-id");
+    if (expanded.has(id)) expanded.delete(id); else expanded.add(id);
+    if (last) render(last);
+  });
+
+  if (sessionStorage.getItem(KEY_STORAGE)) { load(); }
+  schedule();
+})();
+</script>
+</body>
+</html>
