@@ -59,7 +59,7 @@ docker run --rm \
     export PATH=/opt/go/bin:${PATH}
     mkdir -p "${HOME}"
     go version
-    ldd --version | head -1
+    ldd --version | sed -n 1p   # not head: ldd would get SIGPIPE under pipefail
     go build -buildmode=c-shared -trimpath -buildvcs=false -ldflags="-s -w" -o "${OUT}" .
     rm -f "${OUT%.so}.h"
     chmod 0755 "${OUT}"
