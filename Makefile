@@ -16,7 +16,7 @@ ifeq ($(ARCH),arm64)
 PORTABLE := GOARM64=v8.0 CGO_CFLAGS="-march=armv8-a"
 endif
 
-.PHONY: build test vet smoke clean
+.PHONY: build test vet smoke release-lib release-package clean
 
 build:
 	@mkdir -p $(dir $(OUT))
@@ -39,6 +39,23 @@ smoke:
 	fi
 	$(MAKE) build OUT=$(SMOKE_DIR)/plugins/$(NAME).so
 	$(GO) run ./test/smoke -cpa $(CPA_BIN) -plugin $(SMOKE_DIR)/plugins/$(NAME).so -run $(SMOKE_DIR)
+
+# Store release: dist/lib/linux_<arch>/codex-reorder.so -> dist/release/*.zip + checksums.txt.
+# CI (.github/workflows/release.yml) runs both steps for amd64 and arm64.
+VERSION ?= $(shell sed -n 's/^[[:space:]]*pluginVersion[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.go)
+RELEASE_PLATFORMS ?= linux/amd64 linux/arm64
+comma := ,
+empty :=
+space := $(empty) $(empty)
+
+# Release library for the host architecture, built in manylinux2014 (glibc 2.17). Needs docker.
+release-lib:
+	scripts/build-manylinux.sh
+
+# Package the libraries for the CPA plugin store and verify them with CPA's own installer.
+release-package:
+	$(GO) run ./tools/release package -version $(VERSION) $(foreach p,$(RELEASE_PLATFORMS),-lib $(p)=dist/lib/$(subst /,_,$(p))/$(NAME).so)
+	$(GO) run ./tools/release verify -version $(VERSION) -require $(subst $(space),$(comma),$(RELEASE_PLATFORMS))
 
 clean:
 	rm -rf dist $(SMOKE_DIR)

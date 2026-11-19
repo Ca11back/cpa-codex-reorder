@@ -1,0 +1,113 @@
+name: Release
+
+# Builds the CPA plugin store assets (codex-reorder_<version>_linux_<arch>.zip +
+# checksums.txt) in manylinux2014 (glibc 2.17) on native amd64/arm64 runners and
+# verifies them with CPA's own installer. "verify" only uploads a workflow
+# artifact; "publish" also creates the GitHub Release v<version>.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Plugin version without the v prefix (must match pluginVersion in plugin.go)
+        required: true
+        type: string
+      mode:
+        description: verify = build and check only; publish = also create the GitHub Release
+        required: true
+        default: verify
+        type: choice
+        options:
+          - verify
+          - publish
+      notes:
+        description: Release notes (publish only; markdown)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make vet test
+
+  build:
+    name: build linux/${{ matrix.goarch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: amd64
+            runner: ubuntu-24.04
+          - goarch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build in manylinux2014
+        run: scripts/build-manylinux.sh "${{ matrix.goarch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lib-linux_${{ matrix.goarch }}
+          path: dist/lib/linux_${{ matrix.goarch }}/codex-reorder.so
+          if-no-files-found: error
+
+  package:
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      MODE: ${{ inputs.mode }}
+      NOTES: ${{ inputs.notes }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lib-*
+          path: dist/lib
+      - name: Lay out libraries
+        run: |
+          for dir in dist/lib/lib-linux_*; do mv "$dir" "dist/lib/${dir#dist/lib/lib-}"; done
+          ls -lR dist/lib
+      - name: Package and verify with CPA's installer
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: $VERSION" >&2; exit 1; }
+          make release-package VERSION="$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-reorder_${{ inputs.version }}
+          path: dist/release/
+          if-no-files-found: error
+      - name: Create GitHub Release
+        if: inputs.mode == 'publish'
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists" >&2
+            exit 1
+          fi
+          notes="${NOTES:-codex-reorder ${tag}}"
+          gh release create "$tag" dist/release/* \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes "$notes"

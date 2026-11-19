@@ -292,6 +292,24 @@ make build   # 编译 dist/codex-reorder.so
 go run ./test/smoke -keep
 ```
 
+### 发布
+
+发布包按 CPA 插件商店的格式生成：每个平台一个 `codex-reorder_<版本>_linux_<架构>.zip`（根目录仅含 `codex-reorder.so`），外加 `checksums.txt`。正式发布由 GitHub Actions 的 **Release** 工作流完成：
+
+1. 确认 `plugin.go` 中的 `pluginVersion` 已更新为新版本并推送。
+2. 在 Actions 中手动运行 Release，填写版本号（不带 `v`）。`verify` 模式只构建和校验，产物作为工作流附件提供下载；`publish` 模式会额外创建 GitHub Release `v<版本>`。
+
+工作流在原生 amd64 / arm64 runner 上用 manylinux2014 容器编译，产物只依赖 glibc 2.17，在老发行版上也能加载。编译后会在容器内 `dlopen` 一次，确认插件 ABI 符号齐全；打包后再交给 CPA 自身的插件安装器走一遍下载、校验和比对、解压安装的完整流程，并检查 ELF 架构与 glibc 版本上限。
+
+本地有 Docker 时也可以手动构建（只能构建与本机相同的架构）：
+
+```bash
+make release-lib                                   # dist/lib/linux_<本机架构>/codex-reorder.so
+make release-package RELEASE_PLATFORMS=linux/amd64 # dist/release/ 下的 zip 与 checksums.txt
+```
+
+新版本发布后，CPA 插件商店会自动读取最新 Release，无需再修改商店登记。
+
 ### 目录结构
 
 ```text
@@ -315,6 +333,9 @@ internal/reorder/       核心调度引擎（纯 Go，不依赖 cgo）
   persist.go            状态文件持久化与实例所有权控制
 web/dashboard.html      Web 面板单页（编译时嵌入）
 test/smoke/             端到端冒烟测试
+tools/release/          发布包打包与校验（调用 CPA 插件安装器）
+scripts/                manylinux 构建脚本
+.github/workflows/      Release 工作流
 ```
 
 ## 许可证
