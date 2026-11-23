@@ -64,7 +64,7 @@ func TestWarmupOpensRefreshedWindowAfterDelay(t *testing.T) {
 		t.Fatalf("job: %+v", job)
 	}
 	// The plugin's request reaches the scheduler pinned to A: no binding, no assignment, not traffic.
-	res := e.Pick(PickInput{SessionID: "derived", SelectionID: "sel-w", Candidates: cands("A")})
+	res := e.Pick(PickInput{SessionID: "derived", Scope: job.CallerScope, SelectionID: "sel-w", Candidates: cands("A")})
 	if res.Kind != KindWarmup || res.AuthID != "A" {
 		t.Fatalf("warmup pick: %+v", res)
 	}
@@ -87,6 +87,33 @@ func TestWarmupOpensRefreshedWindowAfterDelay(t *testing.T) {
 	c.Advance(10 * time.Minute)
 	if job := e.WarmupTick(allow("A", "B")); job != nil {
 		t.Fatalf("opened account picked again: %+v", job)
+	}
+}
+
+func TestWarmupOnlyMatchesItsOwnRequest(t *testing.T) {
+	e, c, _ := warmupEngine(t, nil)
+	seedWeekly(e, "A", t0.Add(time.Minute), 40)
+	c.Advance(12 * time.Minute)
+	job := e.WarmupTick(allow("A"))
+	if job == nil || job.AuthID != "A" || job.CallerScope == "" {
+		t.Fatalf("want marked warmup for A, got %+v", job)
+	}
+
+	if got := e.Pick(PickInput{SessionID: "chat", Scope: "ordinary", SelectionID: "sel-chat", Candidates: cands("A")}); got.Kind != KindNew {
+		t.Fatalf("ordinary chat during warmup: %+v", got)
+	}
+	if got := e.Pick(PickInput{SessionID: "image", Image: true, SelectionID: "sel-image", Candidates: cands("A")}); got.Kind != KindImage {
+		t.Fatalf("ordinary image during warmup: %+v", got)
+	}
+	if got := e.Pick(PickInput{SessionID: "other", Scope: job.CallerScope, Candidates: cands("B")}); got.Kind != KindNew {
+		t.Fatalf("warmup scope for a different account: %+v", got)
+	}
+	if got := e.Pick(PickInput{SessionID: "derived", Scope: job.CallerScope, Candidates: cands("A")}); got.Kind != KindWarmup {
+		t.Fatalf("warmup during ordinary traffic: %+v", got)
+	}
+	e.FinishWarmup(job, 200, "")
+	if got := e.Pick(PickInput{SessionID: "later", Scope: job.CallerScope, Candidates: cands("A")}); got.Kind != KindNew {
+		t.Fatalf("completed warmup marker was still accepted: %+v", got)
 	}
 }
 

@@ -59,7 +59,8 @@ type Decision struct {
 	DecidedBy  string      `json:"decided_by,omitempty"`
 	Ranking    []RankEntry `json:"ranking,omitempty"`
 	// Lineage is set for new sessions that reported a parent or a subagent signal.
-	Lineage *LineageView `json:"lineage,omitempty"`
+	Lineage  *LineageView `json:"lineage,omitempty"`
+	failover *FailoverDetail
 }
 
 // Pseudo-fields reported by DecidedBy besides the configured order fields.

@@ -1,7 +1,6 @@
 name: Release
 
-# Builds the CPA plugin store assets (codex-reorder_<version>_linux_<arch>.zip +
-# checksums.txt) in manylinux2014 (glibc 2.17) on native amd64/arm64 runners and
+# Builds and tests the six CPA plugin store assets on native runners, then
 # verifies them with CPA's own installer. "verify" only uploads a workflow
 # artifact; "publish" also creates the GitHub Release v<version>.
 on:
@@ -27,6 +26,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CPA_VERSION: '8.1.1'
+
 concurrency:
   group: release-${{ inputs.version }}
   cancel-in-progress: false
@@ -42,28 +44,101 @@ jobs:
       - run: make vet test
 
   build:
-    name: build linux/${{ matrix.goarch }}
+    name: build and test ${{ matrix.goos }}/${{ matrix.goarch }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - goarch: amd64
+          - goos: linux
+            goarch: amd64
             runner: ubuntu-24.04
-          - goarch: arm64
+            extension: so
+            cpa_archive: linux_amd64.tar.gz
+          - goos: linux
+            goarch: arm64
             runner: ubuntu-24.04-arm
+            extension: so
+            cpa_archive: linux_aarch64.tar.gz
+          - goos: darwin
+            goarch: amd64
+            runner: macos-15-intel
+            extension: dylib
+            cpa_archive: darwin_amd64.tar.gz
+          - goos: darwin
+            goarch: arm64
+            runner: macos-15
+            extension: dylib
+            cpa_archive: darwin_aarch64.tar.gz
+          - goos: windows
+            goarch: amd64
+            runner: windows-2025
+            extension: dll
+            cpa_archive: windows_amd64.zip
+          - goos: windows
+            goarch: arm64
+            runner: windows-11-arm
+            extension: dll
+            cpa_archive: windows_aarch64.zip
     runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.goos }}_${{ matrix.goarch }}
+      LIBRARY: codex-reorder.${{ matrix.extension }}
+      CPA_ASSET_SUFFIX: ${{ matrix.cpa_archive }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: false
       - name: Build in manylinux2014
+        if: matrix.goos == 'linux'
         run: scripts/build-manylinux.sh "${{ matrix.goarch }}"
+      - name: Build native library
+        if: matrix.goos != 'linux'
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          [[ "$(go env GOOS)_$(go env GOARCH)" == "$TARGET" ]]
+          mkdir -p "dist/lib/$TARGET"
+          go build -buildmode=c-shared -trimpath -buildvcs=false -ldflags="-s -w" -o "dist/lib/$TARGET/$LIBRARY" .
+          rm "dist/lib/$TARGET/${LIBRARY%.*}.h"
+      - name: Test with native CPA and a mock Codex upstream
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export CPA_ARCHIVE="CLIProxyAPI_${CPA_VERSION}_${CPA_ASSET_SUFFIX}"
+          mkdir -p dist/cpa
+          gh release download "v$CPA_VERSION" --repo router-for-me/CLIProxyAPI \
+            --pattern "$CPA_ARCHIVE" --pattern checksums.txt --dir dist/cpa
+          (
+            cd dist/cpa
+            if command -v sha256sum >/dev/null; then
+              grep -F "  $CPA_ARCHIVE" checksums.txt | sha256sum -c
+            else
+              grep -F "  $CPA_ARCHIVE" checksums.txt | shasum -a 256 -c
+            fi
+            if [[ "$TARGET" == windows_* ]]; then
+              powershell -NoProfile -Command 'Expand-Archive -LiteralPath $env:CPA_ARCHIVE -DestinationPath .'
+            else
+              tar -xf "$CPA_ARCHIVE"
+            fi
+          )
+          cpa=dist/cpa/cli-proxy-api
+          if [[ "$TARGET" == windows_* ]]; then cpa="$cpa.exe"; fi
+          go run ./test/smoke -quick -cpa "$cpa" -plugin "dist/lib/$TARGET/$LIBRARY" -run dist/native-smoke
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-log-${{ env.TARGET }}
+          path: dist/native-smoke/cpa.log
       - uses: actions/upload-artifact@v4
         with:
-          name: lib-linux_${{ matrix.goarch }}
-          path: dist/lib/linux_${{ matrix.goarch }}/codex-reorder.so
+          name: lib-${{ env.TARGET }}
+          path: dist/lib/${{ env.TARGET }}/${{ env.LIBRARY }}
           if-no-files-found: error
 
   package:
@@ -87,7 +162,7 @@ jobs:
           path: dist/lib
       - name: Lay out libraries
         run: |
-          for dir in dist/lib/lib-linux_*; do mv "$dir" "dist/lib/${dir#dist/lib/lib-}"; done
+          for dir in dist/lib/lib-*; do mv "$dir" "dist/lib/${dir#dist/lib/lib-}"; done
           ls -lR dist/lib
       - name: Package and verify with CPA's installer
         run: |

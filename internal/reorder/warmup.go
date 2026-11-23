@@ -1,6 +1,7 @@
 package reorder
 
 import (
+	cryptorand "crypto/rand"
 	"errors"
 	"math/rand/v2"
 	"time"
@@ -22,9 +23,6 @@ const (
 )
 
 const (
-	// warmupPendingFor bounds how long a scheduler pick for a single pinned
-	// account counts as the window-opening request.
-	warmupPendingFor = 2 * time.Minute
 	// warmupVerifyAfter is when a sent request without a visible window counts as not opened.
 	warmupVerifyAfter = 3 * time.Minute
 	// warmupLateWindow caps the random offset when a plan is moved to the start
@@ -37,7 +35,9 @@ var ErrWindowRunning = errors.New("weekly window is already running")
 
 // WarmupJob is one window-opening request the plugin has to send.
 type WarmupJob struct {
-	AuthID          string
+	AuthID string
+	// CallerScope is the per-job marker CPA carries back in scheduler metadata.
+	CallerScope     string
 	Model           string
 	ReasoningEffort string
 	Prompt          string
@@ -262,13 +262,14 @@ func (e *Engine) WarmupTick(allowed map[string]bool) *WarmupJob {
 		acc = due
 	}
 	prompt := WarmupPrompt(warmupPromptMin + int(e.randN(warmupPromptMax-warmupPromptMin+1)))
-	job := &WarmupJob{AuthID: acc.ID, Model: w.Model, ReasoningEffort: w.ReasoningEffort, Prompt: prompt, Manual: manual, PlanAt: acc.WarmupPlanAt, Period: acc.WarmupFor}
+	scope := "codex-reorder-warmup:" + cryptorand.Text()
+	job := &WarmupJob{AuthID: acc.ID, CallerScope: scope, Model: w.Model, ReasoningEffort: w.ReasoningEffort, Prompt: prompt, Manual: manual, PlanAt: acc.WarmupPlanAt, Period: acc.WarmupFor}
 	acc.WarmupForced = false
 	e.dirty = true
 	if e.pendingWarmup == nil {
-		e.pendingWarmup = make(map[string]time.Time)
+		e.pendingWarmup = make(map[string]string)
 	}
-	e.pendingWarmup[acc.ID] = now
+	e.pendingWarmup[acc.ID] = scope
 	return job
 }
 
@@ -348,14 +349,9 @@ func (e *Engine) WarmupWanted() bool {
 	return false
 }
 
-// warmupPickLocked recognises the scheduler pick of a window-opening request:
-// one pinned candidate that has a request in flight.
-func (e *Engine) warmupPickLocked(ids []string, now time.Time) (string, bool) {
-	if len(ids) != 1 {
-		return "", false
-	}
-	at, ok := e.pendingWarmup[ids[0]]
-	return ids[0], ok && now.Sub(at) < warmupPendingFor
+// isWarmupPickLocked matches the private scope of the request in flight for id.
+func (e *Engine) isWarmupPickLocked(id, scope string) bool {
+	return scope != "" && e.pendingWarmup[id] == scope
 }
 
 func itoa(n int) string {

@@ -19,7 +19,7 @@ import (
 
 const (
 	pluginName    = "codex-reorder"
-	pluginVersion = "0.6.5"
+	pluginVersion = "0.6.6"
 	pluginAuthor  = "cpa-codex-reorder"
 	// pluginRepository must be non-empty: CPA rejects plugins without a repository URL.
 	pluginRepository = "https://github.com/Ca11back/cpa-codex-reorder"
@@ -62,6 +62,9 @@ const (
 	metaExecutionSessionID = "execution_session_id"
 	metaCallerScope        = "caller_scope"
 	metaSelectionID        = "selection_id"
+	metaPinnedAuthID       = "pinned_auth_id"
+	metaRequestID          = "request_id"
+	metaTraceID            = "trace_id"
 	// metaRequestPath is CPA's inbound request path ("/v1/images/generations").
 	metaRequestPath = "request_path"
 )
@@ -361,11 +364,24 @@ func pickInput(req pluginapi.SchedulerPickRequest, manageKeys bool) (reorder.Pic
 		SessionID:   sessionID,
 		Scope:       metaString(meta, metaCallerScope),
 		SelectionID: metaString(meta, metaSelectionID),
+		RequestID:   diagnosticID(metaString(meta, metaRequestID)),
+		TraceID:     diagnosticID(metaString(meta, metaTraceID)),
+		Pinned:      metaString(meta, metaPinnedAuthID) != "",
 		Model:       req.Model,
 		Image:       reorder.IsImagePath(metaString(meta, metaRequestPath)),
 		Candidates:  cands,
 		Lineage:     lineageFrom(meta, req.Options.Headers),
 	}, true
+}
+
+// diagnosticID preserves a bounded host-generated ID for exact log correlation.
+func diagnosticID(value string) string {
+	if len(value) > 64 || strings.IndexFunc(value, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-')
+	}) >= 0 {
+		return ""
+	}
+	return value
 }
 
 // isConfigAPIKey reports a Codex API key from CPA's config (codex-api-key), as

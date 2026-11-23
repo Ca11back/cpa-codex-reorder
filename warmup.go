@@ -132,6 +132,7 @@ func sendWarmup(job *reorder.WarmupJob) (int, string) {
 		Body:          body,
 		AuthID:        job.AuthID,
 		Path:          "/v1/responses",
+		CallerScope:   job.CallerScope,
 	})
 	if err != nil {
 		return 0, err.Error()

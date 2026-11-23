@@ -43,10 +43,14 @@ smoke:
 # Store release: dist/lib/linux_<arch>/codex-reorder.so -> dist/release/*.zip + checksums.txt.
 # CI (.github/workflows/release.yml) runs both steps for amd64 and arm64.
 VERSION ?= $(shell sed -n 's/^[[:space:]]*pluginVersion[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.go)
-RELEASE_PLATFORMS ?= linux/amd64 linux/arm64
+RELEASE_PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
 comma := ,
 empty :=
 space := $(empty) $(empty)
+release_extension_darwin := dylib
+release_extension_linux := so
+release_extension_windows := dll
+release_lib = dist/lib/$(subst /,_,$(1))/$(NAME).$(release_extension_$(firstword $(subst /, ,$(1))))
 
 # Release library for the host architecture, built in manylinux2014 (glibc 2.17). Needs docker.
 release-lib:
@@ -54,7 +58,7 @@ release-lib:
 
 # Package the libraries for the CPA plugin store and verify them with CPA's own installer.
 release-package:
-	$(GO) run ./tools/release package -version $(VERSION) $(foreach p,$(RELEASE_PLATFORMS),-lib $(p)=dist/lib/$(subst /,_,$(p))/$(NAME).so)
+	$(GO) run ./tools/release package -version $(VERSION) $(foreach p,$(RELEASE_PLATFORMS),-lib $(p)=$(call release_lib,$(p)))
 	$(GO) run ./tools/release verify -version $(VERSION) -require $(subst $(space),$(comma),$(RELEASE_PLATFORMS))
 
 clean:

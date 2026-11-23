@@ -724,7 +724,8 @@ func TestManualWarmupSendsPinnedRequest(t *testing.T) {
 	_ = json.Unmarshal(req.Body, &body)
 	reasoning, _ := body["reasoning"].(map[string]any)
 	if req.AuthID != "a.json" || req.EntryProtocol != "openai-response" || req.Path != "/v1/responses" || req.Stream ||
-		body["model"] != "gpt-6-luna" || body["input"] == "" || body["stream"] != false || reasoning["effort"] != "low" {
+		!strings.HasPrefix(req.CallerScope, "codex-reorder-warmup:") || body["model"] != "gpt-6-luna" ||
+		body["input"] == "" || body["stream"] != false || reasoning["effort"] != "low" {
 		t.Fatalf("request: %+v body %s", req, req.Body)
 	}
 	for _, a := range buildState().Accounts {

@@ -46,7 +46,18 @@ type PickEvent struct {
 	Reason    string     `json:"reason"`
 	Top       []TopEntry `json:"top,omitempty"`
 	// Lineage is set for new sessions that reported a parent or subagent signal.
-	Lineage *LineageView `json:"lineage,omitempty"`
+	Lineage  *LineageView    `json:"lineage,omitempty"`
+	Failover *FailoverDetail `json:"failover,omitempty"`
+}
+
+// FailoverDetail records what the scheduler knew at the time of a pick.
+type FailoverDetail struct {
+	Candidates       int      `json:"candidates"`
+	BoundOffered     bool     `json:"bound_offered"`
+	Pinned           bool     `json:"pinned"`
+	ExhaustedWindows []string `json:"exhausted_windows,omitempty"`
+	TraceID          string   `json:"trace_id,omitempty"`
+	RequestID        string   `json:"request_id,omitempty"`
 }
 
 // TopEntry is one of the first ranking entries of a pick event.
@@ -251,6 +262,7 @@ func pickEvent(d Decision) PickEvent {
 		DecidedBy: d.DecidedBy,
 		Reason:    d.Reason,
 		Lineage:   d.Lineage,
+		Failover:  d.failover,
 	}
 	for i, r := range d.Ranking {
 		if i == topEntries {

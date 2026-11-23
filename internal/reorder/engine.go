@@ -56,7 +56,12 @@ type PickInput struct {
 	Scope string
 	// SelectionID correlates this pick with the usage record CPA publishes afterwards.
 	SelectionID string
-	Model       string
+	// TraceID matches CPA's inbound log ID; RequestID identifies the host request lifecycle.
+	TraceID   string
+	RequestID string
+	// Pinned reports an explicit credential constraint applied by CPA.
+	Pinned bool
+	Model  string
 	// Image marks an image generation request (CPA metadata request_path).
 	Image      bool
 	Candidates []Candidate
@@ -233,7 +238,7 @@ type Engine struct {
 	// Window opening: the day's counter and spacing gate (persisted), requests in
 	// flight, and the random source (tests replace it).
 	warmup        warmupPersist
-	pendingWarmup map[string]time.Time
+	pendingWarmup map[string]string
 	rnd           func(n int64) int64
 }
 
@@ -316,7 +321,8 @@ func (e *Engine) pickLocked(in PickInput, now time.Time) PickResult {
 	if len(ids) == 0 {
 		return PickResult{}
 	}
-	if id, ok := e.warmupPickLocked(ids, now); ok {
+	if len(ids) == 1 && e.isWarmupPickLocked(ids[0], in.Scope) {
+		id := ids[0]
 		// The plugin's own window-opening request: route it, but create no
 		// binding and count no assignment.
 		e.rememberSelectionLocked(in.SelectionID, "", id, now)
@@ -381,6 +387,18 @@ func (e *Engine) pickLocked(in PickInput, now time.Time) PickResult {
 	}
 	ranking, by := e.rankLocked(ids, loads, now)
 	choice := ranking[0].AuthID
+	diagnostic := &FailoverDetail{
+		Candidates: len(ids), BoundOffered: offered[s.AuthID], Pinned: in.Pinned,
+		TraceID: in.TraceID, RequestID: in.RequestID,
+	}
+	if bound := e.accounts[s.AuthID]; bound != nil {
+		if bound.Short.Exhausted(now) {
+			diagnostic.ExhaustedWindows = append(diagnostic.ExhaustedWindows, "5h")
+		}
+		if bound.Weekly.Exhausted(now) {
+			diagnostic.ExhaustedWindows = append(diagnostic.ExhaustedWindows, "weekly")
+		}
+	}
 
 	if prefixedModel(in.Model) && !offered[s.AuthID] {
 		// A prefixed model ("prefix/model") is registered only for the
@@ -389,7 +407,7 @@ func (e *Engine) pickLocked(in PickInput, now time.Time) PickResult {
 		e.assignLocked(choice, now)
 		e.rememberSelectionLocked(in.SelectionID, key, choice, now)
 		e.logLocked(Decision{At: now, Model: in.Model, Kind: KindPinned, Session: shortKey(key), AuthID: choice, FromAuthID: s.AuthID,
-			Reason: "带前缀的模型只能用对应前缀的账号，本次请求走它，会话绑定不变", DecidedBy: by, Ranking: ranking})
+			Reason: "带前缀的模型只能用对应前缀的账号，本次请求走它，会话绑定不变", DecidedBy: by, Ranking: ranking, failover: diagnostic})
 		return PickResult{AuthID: choice, Handled: true, Kind: KindPinned}
 	}
 
@@ -400,7 +418,7 @@ func (e *Engine) pickLocked(in PickInput, now time.Time) PickResult {
 		// other candidates, usually after the upstream 429 closes the connection.
 		e.rememberSelectionLocked(in.SelectionID, key, choice, now)
 		e.logLocked(Decision{At: now, Model: in.Model, Kind: KindHeld, Session: shortKey(key), AuthID: choice, FromAuthID: s.AuthID,
-			Reason: "原账号额度已用尽，但 CPA 只提供了它（如 websocket 连接内固定账号），这次仍走原账号，绑定不变", DecidedBy: by, Ranking: ranking})
+			Reason: "原账号额度已用尽，当前候选没有可用额度，本次仍走原账号并保留绑定", DecidedBy: by, Ranking: ranking, failover: diagnostic})
 		return PickResult{AuthID: choice, Handled: true, Kind: KindHeld}
 	}
 
@@ -411,13 +429,13 @@ func (e *Engine) pickLocked(in PickInput, now time.Time) PickResult {
 	e.assignLocked(choice, now)
 	e.rememberSelectionLocked(in.SelectionID, key, choice, now)
 	reason := "原账号这次服务不了（出错重试、冷却、禁用或不支持该模型），改绑"
-	if bound := e.accounts[s.AuthID]; bound != nil && bound.exhausted(now) {
+	if len(diagnostic.ExhaustedWindows) > 0 {
 		reason = "原账号额度已用尽，改绑"
 	}
 	from := s.AuthID
 	s.AuthID = choice
 	s.BoundAt = now
-	e.logLocked(Decision{At: now, Model: in.Model, Kind: KindRebind, Session: shortKey(key), AuthID: choice, FromAuthID: from, Reason: reason + "；新账号：" + rankingReason(ranking, by), DecidedBy: by, Ranking: ranking})
+	e.logLocked(Decision{At: now, Model: in.Model, Kind: KindRebind, Session: shortKey(key), AuthID: choice, FromAuthID: from, Reason: reason + "；新账号：" + rankingReason(ranking, by), DecidedBy: by, Ranking: ranking, failover: diagnostic})
 	return PickResult{AuthID: choice, Handled: true, Kind: KindRebind}
 }
 

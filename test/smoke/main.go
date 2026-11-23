@@ -30,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -49,6 +50,7 @@ func main() {
 	pluginSO := flag.String("plugin", "test/smoke/run/plugins/codex-reorder.so", "path to the built plugin")
 	runDir := flag.String("run", "test/smoke/run", "scratch directory")
 	keep := flag.Bool("keep", false, "keep CPA and the mock running after the checks (Ctrl-C to stop)")
+	quick := flag.Bool("quick", false, "check plugin loading, scheduling, stickiness and quota")
 	flag.Parse()
 
 	runAbs, err := filepath.Abs(*runDir)
@@ -121,6 +123,13 @@ func main() {
 		}
 	}
 	check(known == 3, "all 3 accounts have weekly quota data (got %d)", known)
+	if *quick {
+		if failures > 0 {
+			must(fmt.Errorf("%d check(s) failed; CPA log: %s", failures, filepath.Join(runAbs, "cpa.log")))
+		}
+		log.Print("native plugin checks passed")
+		return
+	}
 	next := ""
 	for _, a := range st.Accounts {
 		if a.Order == 1 {
@@ -335,15 +344,16 @@ type warmupSeen struct {
 }
 
 type mockUpstream struct {
-	mu        sync.Mutex
-	usage     []usageQuery
-	warmups   []warmupSeen
-	start     time.Time
-	resets    map[string]time.Time
-	exhausted map[string]bool
-	failNext  map[string]int // answer this many requests with a 502 "server_is_overloaded"
-	opened    map[string]time.Time
-	last      chan servedRequest
+	mu         sync.Mutex
+	usage      []usageQuery
+	warmups    []warmupSeen
+	warmupGate <-chan struct{}
+	start      time.Time
+	resets     map[string]time.Time
+	exhausted  map[string]bool
+	failNext   map[string]int // answer this many requests with a 502 "server_is_overloaded"
+	opened     map[string]time.Time
+	last       chan servedRequest
 }
 
 type servedRequest struct {
@@ -441,8 +451,10 @@ func (m *mockUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(body, &payload)
 
 	m.mu.Lock()
+	var warmupGate <-chan struct{}
 	if warmupPrompt.Match(payload.Input) {
 		m.warmups = append(m.warmups, warmupSeen{key: key, model: payload.Model, input: string(payload.Input), effort: payload.Reasoning.Effort})
+		warmupGate = m.warmupGate
 	}
 	reset := m.weeklyReset(key)
 	exhausted := m.exhausted[key]
@@ -451,6 +463,14 @@ func (m *mockUpstream) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		m.failNext[key]--
 	}
 	m.mu.Unlock()
+
+	if warmupGate != nil {
+		select {
+		case <-warmupGate:
+		case <-r.Context().Done():
+			return
+		}
+	}
 
 	if overloaded {
 		w.Header().Set("Content-Type", "application/json")
@@ -525,7 +545,11 @@ func (p *cpaProcess) stop() {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {
 		return
 	}
-	_ = p.cmd.Process.Signal(os.Interrupt)
+	if runtime.GOOS == "windows" {
+		_ = p.cmd.Process.Kill()
+	} else {
+		_ = p.cmd.Process.Signal(os.Interrupt)
+	}
 	done := make(chan struct{})
 	go func() { _ = p.cmd.Wait(); close(done) }()
 	select {
@@ -552,7 +576,7 @@ func prepareRunDir(runDir, pluginSO, mockURL string, port int) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(runDir, "plugins", "codex-reorder.so"), data, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(runDir, "plugins", "codex-reorder"+filepath.Ext(pluginSO)), data, 0o644); err != nil {
 			return err
 		}
 	}
@@ -823,6 +847,13 @@ func runProbeCheck(cpaURL, runAbs string, mock *mockUpstream) (bool, string) {
 
 // runWarmupCheck lets k-c's weekly window end and waits for the plugin to open it again.
 func runWarmupCheck(cpaURL, runAbs string, mock *mockUpstream) (bool, string) {
+	gate := make(chan struct{})
+	releaseWarmup := sync.OnceFunc(func() { close(gate) })
+	defer releaseWarmup()
+	mock.mu.Lock()
+	mock.warmupGate = gate
+	mock.mu.Unlock()
+
 	status, body := do(http.MethodPatch, cpaURL+"/v0/management/plugins/codex-reorder/config", mgmtKey,
 		`{"order":["priority","sessions","unopened_first","urgency"],"manage_api_keys":true,"warmup_enabled":true,"warmup_model":"`+model+`","warmup_reasoning_effort":"low",`+
 			`"warmup_hours":"00:00-24:00","warmup_delay":"1s","warmup_spacing":"0s","warmup_check_interval":"1s"}`)
@@ -861,18 +892,25 @@ func runWarmupCheck(cpaURL, runAbs string, mock *mockUpstream) (bool, string) {
 	if w.model != model || (w.effort != "" && w.effort != "low") || !promptKnown {
 		return false, fmt.Sprintf("warmup request %+v", w)
 	}
-	reopened := false
-	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && !reopened; time.Sleep(300 * time.Millisecond) {
+	// The prefix leaves only k-c as a candidate while the opening is in flight.
+	// This ordinary request must still create a binding.
+	if served := sendModel(cpaURL, mock, "conv-during-warmup", "pc/"+model); served != "k-c" {
+		return false, "overlapping request not served by k-c: " + served
+	}
+	releaseWarmup()
+
+	reopened, logged := false, false
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline) && !(reopened && logged); time.Sleep(300 * time.Millisecond) {
 		for _, a := range state(cpaURL).Accounts {
 			if a.WeeklyState == "open" && a.Weekly != nil && time.Until(a.Weekly.ResetAt) > 6*24*time.Hour && mock.keyForReset(a.Weekly) == "k-c" {
 				reopened = true
 			}
 		}
+		cpaLog, _ := os.ReadFile(filepath.Join(runAbs, "cpa.log"))
+		logged = strings.Contains(string(cpaLog), `codex-reorder warmup {`) && strings.Contains(string(cpaLog), `"result":"sent"`)
 	}
-	cpaLog, _ := os.ReadFile(filepath.Join(runAbs, "cpa.log"))
-	logged := strings.Contains(string(cpaLog), `codex-reorder warmup {`) && strings.Contains(string(cpaLog), `"result":"sent"`)
-	if !reopened || !logged || len(state(cpaURL).Decisions) != decisionsBefore {
+	if !reopened || !logged || len(state(cpaURL).Decisions) != decisionsBefore+1 {
 		return false, fmt.Sprintf("reopened=%t logged=%t decisions %d -> %d", reopened, logged, decisionsBefore, len(state(cpaURL).Decisions))
 	}
-	return true, "k-c reopened by one request with the configured model and a random-number prompt, no binding"
+	return true, "k-c reopened; only the overlapping ordinary request created a binding"
 }

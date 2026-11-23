@@ -91,6 +91,33 @@ func TestStatsCountFailuresAndPeak(t *testing.T) {
 	}
 }
 
+func TestFailoverEventsReportCandidateConstraintsAndQuotaWindows(t *testing.T) {
+	e, c := newTestEngine(t, nil)
+	events := captureEvents(e)
+	pick(t, e, "s1", "A")
+	headers := weeklyHeaders(c.Now().Add(24*time.Hour), 100)
+	headers["X-Codex-Primary-Used-Percent"] = []string{"100"}
+	delete(headers, "X-Codex-Primary-Reset-At")
+	headers["X-Codex-Primary-Reset-After-Seconds"] = []string{"600"}
+	e.HandleUsage(UsageInput{Provider: ProviderCodex, AuthID: "A", At: c.Now(), Headers: headers})
+
+	e.Pick(PickInput{SessionID: "s1", Pinned: true, TraceID: "trace-1", RequestID: "request-1", Candidates: cands("A")})
+	held := (*events)[1].payload.(PickEvent)
+	if d := held.Failover; held.Kind != KindHeld || d == nil || d.Candidates != 1 || !d.Pinned || !d.BoundOffered ||
+		d.TraceID != "trace-1" || d.RequestID != "request-1" || len(d.ExhaustedWindows) != 2 ||
+		d.ExhaustedWindows[0] != "5h" || d.ExhaustedWindows[1] != "weekly" {
+		t.Fatalf("held event: %+v; details: %+v", held, d)
+	}
+
+	c.Advance(20 * time.Minute)
+	pick(t, e, "s1", "B", "C")
+	rebound := (*events)[2].payload.(PickEvent)
+	if d := rebound.Failover; rebound.Kind != KindRebind || d == nil || d.Candidates != 2 || d.Pinned || d.BoundOffered ||
+		len(d.ExhaustedWindows) != 1 || d.ExhaustedWindows[0] != "weekly" {
+		t.Fatalf("rebind event: %+v; details: %+v", rebound, d)
+	}
+}
+
 func TestWindowEndReportedOnceAfterReset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
 	e, c := newTestEngine(t, func(cfg *Config) {

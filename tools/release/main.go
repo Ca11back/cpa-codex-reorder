@@ -6,7 +6,7 @@
 //
 // The store expects, per GitHub Release tagged v<version>:
 //
-//	codex-reorder_<version>_<goos>_<goarch>.zip   (codex-reorder.so at the zip root)
+//	codex-reorder_<version>_<goos>_<goarch>.zip   (the native library at the zip root)
 //	checksums.txt                                 (sha256sum format)
 package main
 
@@ -16,6 +16,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"debug/elf"
+	"debug/macho"
+	"debug/pe"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -45,6 +47,10 @@ const (
 var abiSymbols = []string{"cliproxy_plugin_init", "cliproxyPluginCall", "cliproxyPluginFree", "cliproxyPluginShutdown"}
 
 var versionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+
+const storePlatforms = "darwin/amd64,darwin/arm64,linux/amd64,linux/arm64,windows/amd64,windows/arm64"
+
+var libraryExtensions = map[string]string{"darwin": ".dylib", "linux": ".so", "windows": ".dll"}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -76,8 +82,12 @@ func (l libFlag) String() string { return fmt.Sprint(map[string]string(l)) }
 
 func (l libFlag) Set(value string) error {
 	platform, path, ok := strings.Cut(value, "=")
-	if !ok || strings.Count(platform, "/") != 1 || path == "" {
+	goos, goarch, _ := strings.Cut(platform, "/")
+	if !ok || libraryExtensions[goos] == "" || (goarch != "amd64" && goarch != "arm64") || path == "" {
 		return fmt.Errorf("want goos/goarch=path, got %q", value)
+	}
+	if _, duplicate := l[platform]; duplicate {
+		return fmt.Errorf("duplicate library for %s", platform)
 	}
 	l[platform] = path
 	return nil
@@ -110,14 +120,11 @@ func runPackage(args []string) error {
 	var checksums strings.Builder
 	for _, platform := range platforms {
 		goos, goarch, _ := strings.Cut(platform, "/")
-		if goos != "linux" {
-			return fmt.Errorf("%s: only linux libraries are supported", platform)
-		}
 		library, err := os.ReadFile(libs[platform])
 		if err != nil {
 			return err
 		}
-		archive, err := zipLibrary(pluginID+".so", library)
+		archive, err := zipLibrary(pluginID+libraryExtensions[goos], library)
 		if err != nil {
 			return err
 		}
@@ -159,7 +166,7 @@ func runVerify(args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
 	version := fs.String("version", "", "plugin version without the v prefix")
 	dir := fs.String("dir", "dist/release", "directory holding the release assets")
-	require := fs.String("require", "linux/amd64,linux/arm64", "comma-separated platforms that must be present")
+	require := fs.String("require", storePlatforms, "comma-separated platforms that must be present")
 	maxGlibc := fs.String("max-glibc", "2.17", "highest GLIBC symbol version a library may need")
 	_ = fs.Parse(args)
 	if err := checkVersion(*version); err != nil {
@@ -191,7 +198,7 @@ func runVerify(args []string) error {
 	for _, platform := range strings.Split(*require, ",") {
 		platform = strings.TrimSpace(platform)
 		goos, goarch, ok := strings.Cut(platform, "/")
-		if !ok {
+		if !ok || libraryExtensions[goos] == "" || (goarch != "amd64" && goarch != "arm64") {
 			return fmt.Errorf("bad platform %q", platform)
 		}
 		pluginsDir, err := os.MkdirTemp("", "codex-reorder-verify-")
@@ -205,7 +212,7 @@ func runVerify(args []string) error {
 			os.RemoveAll(pluginsDir)
 			return fmt.Errorf("%s: CPA installer rejected the release: %w", platform, err)
 		}
-		errLib := checkLibrary(result.Path, goarch, *maxGlibc)
+		errLib := checkLibrary(result.Path, goos, goarch, *maxGlibc)
 		os.RemoveAll(pluginsDir)
 		if errLib != nil {
 			return fmt.Errorf("%s: %w", platform, errLib)
@@ -273,7 +280,36 @@ func checkChecksumsCoverZips(assets map[string][]byte) error {
 }
 
 // checkLibrary inspects the library exactly as CPA installed it.
-func checkLibrary(path, goarch, maxGlibc string) error {
+func checkLibrary(path, goos, goarch, maxGlibc string) error {
+	switch goos {
+	case "darwin":
+		f, err := macho.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		want := map[string]macho.Cpu{"amd64": macho.CpuAmd64, "arm64": macho.CpuArm64}[goarch]
+		if f.Type != macho.TypeDylib || f.Cpu != want {
+			return fmt.Errorf("Mach-O type %v, CPU %v; want dynamic library for %v", f.Type, f.Cpu, want)
+		}
+		return nil
+	case "windows":
+		f, err := pe.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		want := map[string]uint16{"amd64": pe.IMAGE_FILE_MACHINE_AMD64, "arm64": pe.IMAGE_FILE_MACHINE_ARM64}[goarch]
+		if f.Characteristics&pe.IMAGE_FILE_DLL == 0 || f.Machine != want {
+			return fmt.Errorf("PE machine %#x, characteristics %#x; want DLL for %#x", f.Machine, f.Characteristics, want)
+		}
+		return nil
+	default:
+		return checkELF(path, goarch, maxGlibc)
+	}
+}
+
+func checkELF(path, goarch, maxGlibc string) error {
 	f, err := elf.Open(path)
 	if err != nil {
 		return err

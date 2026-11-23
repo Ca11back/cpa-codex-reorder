@@ -45,9 +45,9 @@ make build
 ### 部署与启用
 
 1. **停用其他 Codex 调度插件。** CPA 同一时间仅允许一个调度插件生效。若此前安装过类似插件（如 `codex-quota-scheduler`），请将其 `enabled` 设为 `false` 或移除对应的 `.so`。部分调度插件即使不负责调度，仍会监听用量或拦截请求，务必彻底停用。
-2. **放置插件文件。** 将 `dist/codex-reorder.so` 复制到 CPA 插件目录（CPA 优先扫描 `plugins/linux/amd64/`，其次为 `plugins/`）。插件 ID 由文件名决定，`codex-reorder.so` 与 `codex-reorder-v0.6.5.so` 均识别为 `codex-reorder`。`config.yaml` 中未声明其配置时不会加载，因此可以先放文件、后启用。
+2. **放置插件文件。** 将 `dist/codex-reorder.so` 复制到 CPA 插件目录（CPA 优先扫描 `plugins/linux/amd64/`，其次为 `plugins/`）。插件 ID 由文件名决定，`codex-reorder.so` 与 `codex-reorder-v0.6.6.so` 均识别为 `codex-reorder`。`config.yaml` 中未声明其配置时不会加载，因此可以先放文件、后启用。
 3. **合并配置。** 参考 [config.example.yaml](config.example.yaml)，将 `plugins.configs.codex-reorder` 配置段写入 CPA 的 `config.yaml`。CPA 会自动热重载，无需重启。
-4. **验证加载。** CPA 日志应出现 `codex-reorder 0.6.5 configured: order=...`；如有配置告警，会紧随一条 `codex-reorder config:` 输出。
+4. **验证加载。** CPA 日志应出现 `codex-reorder 0.6.6 configured: order=...`；如有配置告警，会紧随一条 `codex-reorder config:` 输出。
 5. **访问面板**：`https://<CPA地址>/v0/resource/plugins/codex-reorder/dashboard`，输入 CPA 管理密钥即可查看实时状态。
 
 > **切换提示**
@@ -214,7 +214,7 @@ Codex 的周额度窗口在**首次使用**时才开始计时，7 天后重置�
 
 - 命中粘性的既有会话请求（占绝大多数）不逐条记录，仅在 `stats` 中汇总计数。`stats` 单行约 2–3 KB，若每 5 分钟输出一行，可占到 CPA 日志的三成左右，因此默认关闭；排查问题时设为 `15m` 即可。
 - 新会话的 `pick` 若携带来源信号，会附带 `lineage` 字段：父会话哈希、父会话当前绑定的账号、是否为 Codex 子代理等。目前仅记录，不参与调度。
-- CPA 不向插件透传请求 ID，日志中的请求 ID 字段显示为 `--------`，排查时请按时间戳与账号 ID 关联 CPA 自身日志。
+- `rebind`、`held`、`pinned` 的 `failover` 字段记录参与选号的候选数量、原账号是否在候选中、CPA 是否指定了固定账号，以及原账号已知耗尽的窗口（`5h`、`weekly`）。若 CPA 提供 `trace_id`，可用其末 8 位关联主日志中的上游报错；若无该字段，可按时间戳、模型和账号 ID 对照。
 
 常用分析命令：
 
@@ -294,12 +294,12 @@ go run ./test/smoke -keep
 
 ### 发布
 
-发布包按 CPA 插件商店的格式生成：每个平台一个 `codex-reorder_<版本>_linux_<架构>.zip`（根目录仅含 `codex-reorder.so`），外加 `checksums.txt`。正式发布由 GitHub Actions 的 **Release** 工作流完成：
+发布包覆盖 macOS（`darwin`）、Linux 和 Windows，每个系统提供 amd64、arm64 两个架构。每包命名为 `codex-reorder_<版本>_<系统>_<架构>.zip`，根目录只包含对应的 `codex-reorder.dylib`、`codex-reorder.so` 或 `codex-reorder.dll`。六个包共用一份 `checksums.txt`。正式发布由 GitHub Actions 的 **Release** 工作流完成：
 
 1. 确认 `plugin.go` 中的 `pluginVersion` 已更新为新版本并推送。
 2. 在 Actions 中手动运行 Release，填写版本号（不带 `v`）。`verify` 模式只构建和校验，产物作为工作流附件提供下载；`publish` 模式会额外创建 GitHub Release `v<版本>`。
 
-工作流在原生 amd64 / arm64 runner 上用 manylinux2014 容器编译，产物只依赖 glibc 2.17，在老发行版上也能加载。编译后会在容器内 `dlopen` 一次，确认插件 ABI 符号齐全；打包后再交给 CPA 自身的插件安装器走一遍下载、校验和比对、解压安装的完整流程，并检查 ELF 架构与 glibc 版本上限。
+工作流在目标系统和架构上用 CPA 实际加载插件，并通过模拟上游验证调度、会话粘性及额度读取。Linux 库在 manylinux2014 容器里编译和加载，glibc 上限为 2.17。打包后再通过 CPA 的插件安装器校验和安装六个包，并检查库格式与架构。
 
 本地有 Docker 时也可以手动构建（只能构建与本机相同的架构）：
 
