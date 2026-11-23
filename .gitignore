@@ -2,6 +2,7 @@
 /dist/
 *.so
 *.h
+!/abi.h
 *.dylib
 *.dll
 
