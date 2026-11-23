@@ -93,6 +93,23 @@ jobs:
       - name: Build in manylinux2014
         if: matrix.goos == 'linux'
         run: scripts/build-manylinux.sh "${{ matrix.goarch }}"
+      - name: Set up Windows ARM64 C compiler
+        if: matrix.goos == 'windows' && matrix.goarch == 'arm64'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=20261117
+          toolchain="llvm-mingw-${version}-ucrt-aarch64"
+          mkdir -p dist/toolchain
+          cd dist/toolchain
+          gh release download "$version" --repo mstorsjo/llvm-mingw --pattern "$toolchain.zip"
+          printf '%s  %s\n' c7f56de1d7aca15196c19083a799205390397b8b87a825aec3485e1e4f3c2cdd "$toolchain.zip" | sha256sum -c
+          export TOOLCHAIN_ZIP="$toolchain.zip"
+          powershell -NoProfile -Command 'Expand-Archive -LiteralPath $env:TOOLCHAIN_ZIP -DestinationPath .'
+          cygpath -w "$PWD/$toolchain/bin" >> "$GITHUB_PATH"
+          echo 'CC=aarch64-w64-mingw32-clang' >> "$GITHUB_ENV"
       - name: Build native library
         if: matrix.goos != 'linux'
         shell: bash
@@ -101,6 +118,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(go env GOOS)_$(go env GOARCH)" == "$TARGET" ]]
+          "$(go env CC)" --version
           mkdir -p "dist/lib/$TARGET"
           go build -buildmode=c-shared -trimpath -buildvcs=false -ldflags="-s -w" -o "dist/lib/$TARGET/$LIBRARY" .
           rm "dist/lib/$TARGET/${LIBRARY%.*}.h"
