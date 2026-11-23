@@ -148,9 +148,7 @@ jobs:
           )
           cpa=dist/cpa/cli-proxy-api
           if [[ "$TARGET" == windows_* ]]; then cpa="$cpa.exe"; fi
-          quick=true
-          if [[ "$TARGET" == darwin_amd64 ]]; then quick=false; fi
-          go run ./test/smoke "-quick=$quick" -cpa "$cpa" -plugin "dist/lib/$TARGET/$LIBRARY" -run dist/native-smoke
+          go run ./test/smoke -quick -cpa "$cpa" -plugin "dist/lib/$TARGET/$LIBRARY" -run dist/native-smoke
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
