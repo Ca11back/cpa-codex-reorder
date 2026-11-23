@@ -43,7 +43,7 @@ smoke:
 # Store release: dist/lib/linux_<arch>/codex-reorder.so -> dist/release/*.zip + checksums.txt.
 # CI (.github/workflows/release.yml) runs both steps for amd64 and arm64.
 VERSION ?= $(shell sed -n 's/^[[:space:]]*pluginVersion[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' plugin.go)
-RELEASE_PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
+RELEASE_PLATFORMS ?= darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
 comma := ,
 empty :=
 space := $(empty) $(empty)

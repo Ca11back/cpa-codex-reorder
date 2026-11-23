@@ -294,12 +294,12 @@ go run ./test/smoke -keep
 
 ### 发布
 
-发布包覆盖 macOS（`darwin`）、Linux 和 Windows，每个系统提供 amd64、arm64 两个架构。每包命名为 `codex-reorder_<版本>_<系统>_<架构>.zip`，根目录只包含对应的 `codex-reorder.dylib`、`codex-reorder.so` 或 `codex-reorder.dll`。六个包共用一份 `checksums.txt`。正式发布由 GitHub Actions 的 **Release** 工作流完成：
+发布包覆盖 Apple Silicon macOS、Linux amd64/arm64 和 Windows amd64/arm64。每包命名为 `codex-reorder_<版本>_<系统>_<架构>.zip`，根目录只包含对应的 `codex-reorder.dylib`、`codex-reorder.so` 或 `codex-reorder.dll`。五个包共用一份 `checksums.txt`。正式发布由 GitHub Actions 的 **Release** 工作流完成：
 
 1. 确认 `plugin.go` 中的 `pluginVersion` 已更新为新版本并推送。
 2. 在 Actions 中手动运行 Release，填写版本号（不带 `v`）。`verify` 模式只构建和校验，产物作为工作流附件提供下载；`publish` 模式会额外创建 GitHub Release `v<版本>`。
 
-工作流在目标系统和架构上用 CPA 实际加载插件，并通过模拟上游验证调度、会话粘性及额度读取。Linux 库在 manylinux2014 容器里编译和加载，glibc 上限为 2.17。打包后再通过 CPA 的插件安装器校验和安装六个包，并检查库格式与架构。
+工作流在目标系统和架构上用 CPA 实际加载插件，并通过模拟上游验证调度、会话粘性及额度读取。Linux 库在 manylinux2014 容器里编译和加载，glibc 上限为 2.17。打包后再通过 CPA 的插件安装器校验和安装每个包，并检查库格式与架构。
 
 本地有 Docker 时也可以手动构建（只能构建与本机相同的架构）：
 
@@ -308,7 +308,7 @@ make release-lib                                   # dist/lib/linux_<本机架�
 make release-package RELEASE_PLATFORMS=linux/amd64 # dist/release/ 下的 zip 与 checksums.txt
 ```
 
-新版本发布后，CPA 插件商店会自动读取最新 Release，无需再修改商店登记。
+CPA 插件商店要求额外提供 Intel macOS（`darwin/amd64`）。本项目选择独立发布，商店申请状态见 [PR #386](https://github.com/router-for-me/CLIProxyAPI-Plugins-Store/pull/386)。
 
 ### 目录结构
 

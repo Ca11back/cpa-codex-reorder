@@ -1,6 +1,6 @@
 name: Release
 
-# Builds and tests the six CPA plugin store assets on native runners, then
+# Builds and tests the supported release packages on native runners, then
 # verifies them with CPA's own installer. "verify" only uploads a workflow
 # artifact; "publish" also creates the GitHub Release v<version>.
 on:
@@ -59,11 +59,6 @@ jobs:
             runner: ubuntu-24.04-arm
             extension: so
             cpa_archive: linux_aarch64.tar.gz
-          - goos: darwin
-            goarch: amd64
-            runner: macos-15-intel
-            extension: dylib
-            cpa_archive: darwin_amd64.tar.gz
           - goos: darwin
             goarch: arm64
             runner: macos-15
