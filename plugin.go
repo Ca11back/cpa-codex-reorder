@@ -19,7 +19,7 @@ import (
 
 const (
 	pluginName    = "codex-reorder"
-	pluginVersion = "0.6.6"
+	pluginVersion = "0.6.7"
 	pluginAuthor  = "cpa-codex-reorder"
 	// pluginRepository must be non-empty: CPA rejects plugins without a repository URL.
 	pluginRepository = "https://github.com/Ca11back/cpa-codex-reorder"

@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 env:
-  CPA_VERSION: '8.1.1'
+  CPA_VERSION: '8.1.2'
 
 concurrency:
   group: release-${{ inputs.version }}
@@ -49,11 +49,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-24.04
+            extension: so
+            cpa_archive: linux_amd64.tar.gz
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+            extension: so
+            cpa_archive: linux_aarch64.tar.gz
           - goos: darwin
             goarch: amd64
             runner: macos-15-intel
             extension: dylib
             cpa_archive: darwin_amd64.tar.gz
+          - goos: darwin
+            goarch: arm64
+            runner: macos-15
+            extension: dylib
+            cpa_archive: darwin_aarch64.tar.gz
+          - goos: windows
+            goarch: amd64
+            runner: windows-2025
+            extension: dll
+            cpa_archive: windows_amd64.zip
+          - goos: windows
+            goarch: arm64
+            runner: windows-11-arm
+            extension: dll
+            cpa_archive: windows_aarch64.zip
     runs-on: ${{ matrix.runner }}
     env:
       TARGET: ${{ matrix.goos }}_${{ matrix.goarch }}
@@ -123,9 +148,12 @@ jobs:
           )
           cpa=dist/cpa/cli-proxy-api
           if [[ "$TARGET" == windows_* ]]; then cpa="$cpa.exe"; fi
-          quick=true
-          if [[ "$TARGET" == darwin_amd64 ]]; then quick=false; fi
-          go run ./test/smoke "-quick=$quick" -cpa "$cpa" -plugin "dist/lib/$TARGET/$LIBRARY" -run dist/native-smoke
+          if [[ "$TARGET" == darwin_amd64 ]]; then
+            smoke_flags=(-parallel)
+          else
+            smoke_flags=(-quick)
+          fi
+          go run ./test/smoke "${smoke_flags[@]}" -cpa "$cpa" -plugin "dist/lib/$TARGET/$LIBRARY" -run dist/native-smoke
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -136,3 +164,49 @@ jobs:
           name: lib-${{ env.TARGET }}
           path: dist/lib/${{ env.TARGET }}/${{ env.LIBRARY }}
           if-no-files-found: error
+
+  package:
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      MODE: ${{ inputs.mode }}
+      NOTES: ${{ inputs.notes }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: lib-*
+          path: dist/lib
+      - name: Lay out libraries
+        run: |
+          for dir in dist/lib/lib-*; do mv "$dir" "dist/lib/${dir#dist/lib/lib-}"; done
+          ls -lR dist/lib
+      - name: Package and verify with CPA's installer
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: $VERSION" >&2; exit 1; }
+          make release-package VERSION="$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-reorder_${{ inputs.version }}
+          path: dist/release/
+          if-no-files-found: error
+      - name: Create GitHub Release
+        if: inputs.mode == 'publish'
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag already exists" >&2
+            exit 1
+          fi
+          notes="${NOTES:-codex-reorder ${tag}}"
+          gh release create "$tag" dist/release/* \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes "$notes"

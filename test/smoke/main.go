@@ -51,6 +51,7 @@ func main() {
 	runDir := flag.String("run", "test/smoke/run", "scratch directory")
 	keep := flag.Bool("keep", false, "keep CPA and the mock running after the checks (Ctrl-C to stop)")
 	quick := flag.Bool("quick", false, "check plugin loading, scheduling, stickiness and quota")
+	parallel := flag.Bool("parallel", false, "also exercise concurrent model and management requests")
 	flag.Parse()
 
 	runAbs, err := filepath.Abs(*runDir)
@@ -303,6 +304,11 @@ func main() {
 	warmOK, warmDetail := runWarmupCheck(cpaURL, runAbs, mock)
 	check(warmOK, "automatic window opening reopens an ended weekly window through CPA (%s)", warmDetail)
 
+	if *parallel {
+		err := checkParallelTraffic(cpaURL, mock)
+		check(err == nil, "parallel model dispatch and host.auth.list (%v)", err)
+	}
+
 	if failures > 0 {
 		log.Printf("%d check(s) failed; CPA log: %s", failures, filepath.Join(runAbs, "cpa.log"))
 	} else {
@@ -316,6 +322,63 @@ func main() {
 		stopCurrent()
 		os.Exit(1)
 	}
+}
+
+// Model requests exercise scheduler and usage calls, while state requests also
+// exercise the synchronous plugin-to-host callback under concurrent load.
+func checkParallelTraffic(base string, mock *mockUpstream) error {
+	const waves, requests = 12, 24
+	// Each wave fits in the mock's result channel even with account retries.
+	for range waves {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		results := make(chan error, requests)
+		for index := range requests {
+			go func() {
+				method, route, key, body := http.MethodGet, "/v0/management/codex-reorder/state", mgmtKey, ""
+				if index%2 == 0 {
+					method, route, key = http.MethodPost, "/v1/responses", clientKey
+					session := fmt.Sprintf("conv-parallel-%d", index)
+					body = fmt.Sprintf(`{"model":%q,"input":"parallel check","stream":true,"prompt_cache_key":%q}`, model, session)
+				}
+				req, err := http.NewRequestWithContext(ctx, method, base+route, strings.NewReader(body))
+				if err != nil {
+					results <- err
+					return
+				}
+				req.Header.Set("Authorization", "Bearer "+key)
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					results <- err
+					return
+				}
+				data, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err == nil && resp.StatusCode != http.StatusOK {
+					err = fmt.Errorf("%s returned HTTP %d", route, resp.StatusCode)
+				}
+				if err == nil && method == http.MethodPost && !bytes.Contains(data, []byte("response.completed")) {
+					err = errors.New("model stream ended before response.completed")
+				}
+				results <- err
+			}()
+		}
+		var firstErr error
+		for range requests {
+			if err := <-results; err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		cancel()
+		for len(mock.last) > 0 {
+			<-mock.last
+		}
+		if firstErr != nil {
+			return firstErr
+		}
+	}
+	log.Printf("checked %d concurrent model and state requests", waves*requests)
+	return nil
 }
 
 // ---- mock Codex upstream ----

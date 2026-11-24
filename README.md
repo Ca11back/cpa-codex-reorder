@@ -45,9 +45,9 @@ make build
 ### 部署与启用
 
 1. **停用其他 Codex 调度插件。** CPA 同一时间仅允许一个调度插件生效。若此前安装过类似插件（如 `codex-quota-scheduler`），请将其 `enabled` 设为 `false` 或移除对应的 `.so`。部分调度插件即使不负责调度，仍会监听用量或拦截请求，务必彻底停用。
-2. **放置插件文件。** 将 `dist/codex-reorder.so` 复制到 CPA 插件目录（CPA 优先扫描 `plugins/linux/amd64/`，其次为 `plugins/`）。插件 ID 由文件名决定，`codex-reorder.so` 与 `codex-reorder-v0.6.6.so` 均识别为 `codex-reorder`。`config.yaml` 中未声明其配置时不会加载，因此可以先放文件、后启用。
+2. **放置插件文件。** 将 `dist/codex-reorder.so` 复制到 CPA 插件目录（CPA 优先扫描 `plugins/linux/amd64/`，其次为 `plugins/`）。插件 ID 由文件名决定，`codex-reorder.so` 与 `codex-reorder-v0.6.7.so` 均识别为 `codex-reorder`。`config.yaml` 中未声明其配置时不会加载，因此可以先放文件、后启用。
 3. **合并配置。** 参考 [config.example.yaml](config.example.yaml)，将 `plugins.configs.codex-reorder` 配置段写入 CPA 的 `config.yaml`。CPA 会自动热重载，无需重启。
-4. **验证加载。** CPA 日志应出现 `codex-reorder 0.6.6 configured: order=...`；如有配置告警，会紧随一条 `codex-reorder config:` 输出。
+4. **验证加载。** CPA 日志应出现 `codex-reorder 0.6.7 configured: order=...`；如有配置告警，会紧随一条 `codex-reorder config:` 输出。
 5. **访问面板**：`https://<CPA地址>/v0/resource/plugins/codex-reorder/dashboard`，输入 CPA 管理密钥即可查看实时状态。
 
 > **切换提示**
@@ -299,7 +299,7 @@ go run ./test/smoke -keep
 1. 确认 `plugin.go` 中的 `pluginVersion` 已更新为新版本并推送。
 2. 在 Actions 中手动运行 Release，填写版本号（不带 `v`）。`verify` 模式只构建和校验，产物作为工作流附件提供下载；`publish` 模式会额外创建 GitHub Release `v<版本>`。
 
-工作流在目标系统和架构上用 CPA 实际加载插件，并通过模拟上游验证调度、会话粘性及额度读取。Linux 库在 manylinux2014 容器里编译和加载，glibc 上限为 2.17。打包后再通过 CPA 的插件安装器校验和安装六个包，并检查库格式与架构。
+工作流在目标系统和架构上用 CPA 实际加载插件，并通过模拟上游验证调度、会话粘性及额度读取。Linux 库在 manylinux2014 容器里编译和加载，glibc 上限为 2.17。打包后再通过 CPA 的插件安装器校验和安装六个包，并检查库格式与架构。Intel macOS 的 C ABI 在独立的原生线程上调用 Go，以隔离 CPA 与插件各自的 Go 线程状态。该平台额外运行完整冒烟测试和并发回归。
 
 本地有 Docker 时也可以手动构建（只能构建与本机相同的架构）：
 
